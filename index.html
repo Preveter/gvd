@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>GVD</title>
+        <script type="text/javascript" src="sha1.js"></script>
+        <script type="text/javascript" src="wson.js"></script>
+        <script type="text/javascript" src="gvd.js"></script>
+    </head>
+    <body>
+    <!--    <script>
+            var ws = new WebSocket("ws://127.0.0.1:8765/");
+            var sendLine = function(){};
+            ws.onopen = function(){
+                sendLine = function(){
+                    var message = document.getElementById('line').value;
+                    ws.send(message);
+                }
+            };
+            ws.onmessage = function(event){
+                addLine(event.data);
+            };
+            ws.onclose = function(event) {
+              if (event.wasClean) {
+                addLine('Соединение закрыто чисто');
+              } else {
+                addLine('Обрыв соединения');
+              }
+              addLine('Код: ' + event.code + ' причина: ' + event.reason);
+            };
+            addLine = function(text){
+                var messages = document.getElementById('chat'),
+                    message = document.createElement('li'),
+                    content = document.createTextNode(text);
+                message.appendChild(content);
+                messages.appendChild(message);
+            };
+            fillInput = function(text){
+                document.getElementById('line').value = text;
+            };
+        </script>
+    <ul id="chat"></ul>
+    <input type="text" id="line" value=""><input type="button" value="Send" onclick="sendLine();">
+    <br>
+    <input type="button" value="msg 111" onclick="fillInput(this.value);">
+    <input type="button" value="sign Preveter" onclick="fillInput(this.value);">
+    <input type="button" value="sign Junkrat" onclick="fillInput(this.value);">
+    <input type="button" value="motto" onclick="fillInput(this.value);">
+    <input type="button" value="passwd 12345678" onclick="fillInput(this.value);">
+    <input type="button" value="login Preveter" onclick="fillInput(this.value);">
+    <input type="button" value="login Junkrat" onclick="fillInput(this.value);">
+    <input type="button" value="auth 12345678" onclick="fillInput(this.value);">
+    <input type="button" value="testauth" onclick="fillInput(this.value);">
+    </body>-->
+</html>
