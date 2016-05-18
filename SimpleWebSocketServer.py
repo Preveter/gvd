@@ -3,6 +3,7 @@ The MIT License (MIT)
 Copyright (c) 2013 Dave P.
 '''
 import sys
+import traceback
 
 VER = sys.version_info[0]
 if VER >= 3:
@@ -648,6 +649,7 @@ class SimpleWebSocketServer(object):
                         client._handleData()
                     except Exception as n:
                         print("Exception: " + str(n))
+                        traceback.print_exc()
                         client.client.close()
                         client.handleClose()
                         del self.connections[ready]

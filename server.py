@@ -59,9 +59,15 @@ class GVD(WebSocket):
         self.name = ""
         self.authorized = False
         self.auth_salt = ""
-        self.password_change = False
 
         self.user = False
+
+        self.handlers = {}
+
+        self.on("sign", self.signup_ph1)
+        self.on("login", self.auth_ph1)
+        self.on("sid", self.session)
+        self.on("test_auth", lambda: self.sendMessage(self.name + ": " + str(self.authorized)))
 
     def handleConnected(self):
         print(self.address, 'connected')
@@ -72,27 +78,28 @@ class GVD(WebSocket):
         clients.remove(self)
 
     def handleMessage(self):
-        raw = self.data.split(" ", 1)
-        com = raw[0]
-        try:
-            data = raw[1].split(" ")
-        except IndexError:
-            data = []
+        data = self.data
+        print("< " + data)
+        msg_arr = json.loads(data)
+        names = msg_arr.keys()
 
-        if com == "sign":
-            self.sign_ph1(data[0])
-        if com == "motto":
-            self.sign_ph2()
-        if com == "passwd":
-            self.passwd(data[0])
-        if com == "login":
-            self.auth_ph1(data[0])
-        if com == "auth":
-            self.auth_ph2(data[0])
-        if com == "sid":
-            self.session(data[0])
-        if com == "testauth":
-            self.sendMessage(self.name + ": " + str(self.authorized))
+        for name in names:
+            if name in self.handlers:
+                self.handlers[name](msg_arr[name])
+
+    def on(self, msg, handler):
+        self.handlers[msg] = handler
+
+    def off(self, msg):
+        del self.handlers[msg]
+
+    def send(self, msg, data):
+        line = json.dumps({msg: data})
+        print("> " + line)
+        self.sendMessage(line)
+
+    def send_error(self, err_msg):
+        self.send("error", {"msg": err_msg})
 
     def authorize(self):
         self.authorized = True
@@ -102,12 +109,14 @@ class GVD(WebSocket):
         s = Session.create(sid=sid, god=self.name)
         s.save()
 
-        self.sendMessage("sid " + sid)
+        self.send("auth", {"status": "success", "sid": sid})
 
-    def sign_ph1(self, name):
-        god_info = get_god_info(name)
+    # SIGN UP ##########
+
+    def signup_ph1(self, data):
+        god_info = get_god_info(data["login"])
         if not god_info:
-            self.sendMessage("Unknown god name!")
+            self.send_error("Unknown god name")
             return
         self.name = god_info['godname']
 
@@ -119,64 +128,65 @@ class GVD(WebSocket):
             motto = user.motto_login
         user.save()
 
-        self.sendMessage("Change your current motto to: " + motto)
+        self.on("motto", self.signup_ph2)
+        self.send("sign", {"motto": motto})
 
-    def sign_ph2(self):
+    def signup_ph2(self, _):
         user = User.get(god_name=self.name)
         req_motto = user.motto_login
-        if len(req_motto) < MOTTO_LEN:
-            self.sendMessage("Auth missequencing!")
-            return
 
         god_info = get_god_info(self.name)
         if not god_info:
-            self.sendMessage("Unknown god name!")
+            self.send_error("Unknown god name")
             return
         motto = god_info['motto']
 
         if motto.find(req_motto) == -1:
-            self.sendMessage("Motto-based auth failed!")
-            return
+            self.send("motto", {"status": "declined"})
+        else:
+            self.off("motto")
+            self.on("passwd", self.passwd)
+            self.send("motto", {"status": "accepted"})
 
-        self.password_change = True
-        self.sendMessage("Now you can set your password!")
-
-    def passwd(self, password):
-        if not self.password_change:
-            self.sendMessage("You can change your password only after motto approval")
-            return
-
+    def passwd(self, data):
+        password = data["password"]
         user = User.get(god_name=self.name)
         user.password = hashlib.sha1(password.encode()).hexdigest()
         user.motto_login = ""
         user.save()
 
-        self.sendMessage("success")
+        self.off("passwd")
+        self.send("success", {})
 
-    def auth_ph1(self, login):
-        self.name = login
+    # AUTH ##########
+
+    def auth_ph1(self, data):
+        self.name = data["login"]
 
         try:
             User.get(god_name=self.name)
         except User.DoesNotExist:
-            self.sendMessage('{"error": {"msg": "User does not registered"}}')
+            self.send_error("User does not registered")
             return
 
-        self.auth_salt = rnd_gen(32)
-        self.sendMessage('{"salt": {"salt": "' + self.auth_salt + '"}}')
+        # TODO: Fake unregistered user to provide more security
 
-    def auth_ph2(self, password):
+        self.auth_salt = rnd_gen(32)
+        self.on("auth", self.auth_ph2)
+        self.send("salt", {"salt": self.auth_salt})
+
+    def auth_ph2(self, data):
         if len(self.auth_salt) < 32:
-            self.sendMessage("Auth missequencing!")
             return
 
         user = User.get(god_name=self.name)
         req = hashlib.sha1((user.password + self.auth_salt).encode()).hexdigest()
 
-        if not password == req:
-            self.sendMessage('{"error": {"msg": "Auth failed"}}')
+        if not data["password"] == req:
+            self.send("auth", {"status": "fail"})
             return
 
+        self.off("auth")
         self.authorize()
 
     def session(self, sid):

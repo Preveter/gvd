@@ -16,10 +16,9 @@ function WSON(address){
         var names = Object.keys(msg_arr);
 
         for (var i = 0; i < names.length; i++){
-            for (var j = 0; j < handlers.length; j++){
-                if (names[i] == handlers[j].m){
-                    handlers[j].h(msg_arr[names[i]]);
-                }
+            var name = names[i];
+            if (name in handlers){
+                handlers[name](msg_arr[name]);
             }
         }
     };
@@ -32,22 +31,16 @@ function WSON(address){
     };
 
     this.on = function(msg, handler){
-        var i;
-        for (i = 0; i < handlers.length; i++){
-            if (handlers[i].m == msg) break;
-        }
-        if (i < handlers.length){
-            handlers[i].h = handler;
-        }else{
-            handlers.push({
-                m: msg,
-                h: handler
-            })
-        }
+        handlers[msg] = handler;
+    };
+    this.off = function(msg){
+        delete handlers[msg];
     };
 
-    this.send = function(data){
-        ws.send(data);
+    this.send = function(msg, data){
+        var o = {};
+        o[msg] = data;
+        ws.send(JSON.stringify(o));
     };
 
     return this;

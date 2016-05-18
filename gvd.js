@@ -36,14 +36,26 @@
         confirm.id = "confirmButton";
         confirm.value = "Войти";
         confirm.onclick = function(){
-            wson.send("login " + nameInput.value);
+            wson.send("login", {login: nameInput.value});
         };
         loginForm.appendChild(confirm);
 
         wson.on("salt", function(d){
             var hash1 = Sha1.hash(passwordInput.value);
             var hash2 = Sha1.hash(hash1 + d.salt);
-            wson.send("auth " + hash2);
+            wson.send("auth", {password: hash2});
+            wson.off("salt");
+        });
+        
+        wson.on("auth", function(d){
+            if (d.status == "success"){
+                var date = new Date(new Date().getDate() + 365);
+                document.cookie = "sid=" + d.sid + "; path=/; expires=" + date.toUTCString();
+                console.log("Success auth");
+                wson.off("auth");
+            }else{
+                alert("Неверный пароль");
+            }
         });
         
         document.body.appendChild(loginForm);
