@@ -38,6 +38,7 @@ function WSON(address){
     };
 
     this.send = function(msg, data){
+        data = data || {};
         var o = {};
         o[msg] = data;
         ws.send(JSON.stringify(o));

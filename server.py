@@ -101,15 +101,21 @@ class GVD(WebSocket):
     def send_error(self, err_msg):
         self.send("error", {"msg": err_msg})
 
-    def authorize(self):
-        self.authorized = True
+    def create_session(self):
         self.auth_salt = ""
         sid = rnd_gen(32)
 
         s = Session.create(sid=sid, god=self.name)
         s.save()
 
+        self.authorize()
         self.send("auth", {"status": "success", "sid": sid})
+
+    def authorize(self):
+        self.authorized = True
+        self.on("load", self.load_data)
+        self.on("jump", self.jump)
+        self.on("join", self.join)
 
     # SIGN UP ##########
 
@@ -187,18 +193,29 @@ class GVD(WebSocket):
             return
 
         self.off("auth")
-        self.authorize()
+        self.create_session()
 
-    def session(self, sid):
+    def session(self, data):
         try:
-            s = Session.get(sid=sid)
+            s = Session.get(sid=data["sid"])
         except Session.DoesNotExist:
-            self.sendMessage("Wrong SID!")
+            self.send("sid", {"status": "declined"})
             return
 
         self.name = s.god.god_name
-        self.authorized = True
-        self.sendMessage("success")
+        self.authorize()
+        self.send("sid", {"status": "accepted"})
+
+    def load_data(self, _):
+        gods = [c.name for c in clients]
+        self.send("data", {"users": gods})
+
+    def jump(self, _):
+        for c in clients:
+            c.send("jump", {})
+
+    def join(self, _):
+        pass
 
 
 server = SimpleWebSocketServer('', 8765, GVD)
