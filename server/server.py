@@ -1,17 +1,14 @@
+import hashlib
 import json
 import random
 import string
+import time
 import urllib.error
 import urllib.request
-import hashlib
 
-import peewee
-
-from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
-
-clients = []
-db = peewee.SqliteDatabase("gvd.db")
-db.connect()
+from models import User, Session
+from SimpleWebSocketServer import SimpleWebSocketServer
+from wson import WSON
 
 MOTTO_LEN = 8
 
@@ -28,46 +25,34 @@ def get_god_info(name):
     return json.loads(raw.decode("utf-8"))
 
 
-class User(peewee.Model):
-    god_name = peewee.FixedCharField(index=True, primary_key=True, max_length=30)
-    password = peewee.CharField(null=True, max_length=255)
-    motto_login = peewee.CharField(null=True, max_length=30)
-
-    class Meta:
-        database = db
+clients = []
+users = []
+jump_time = 0
+jump_delay = 300  # = (5 minutes) * 60
 
 
-class Session(peewee.Model):
-    sid = peewee.FixedCharField(index=True, primary_key=True, max_length=32)
-    god = peewee.ForeignKeyField(User, related_name='sessions')
-    last_connect = peewee.DateTimeField(null=True)
-    last_address = peewee.CharField(null=True, max_length=255)
+class ActiveUser:
 
-    class Meta:
-        database = db
+    def __init__(self, name):
+        self.name = name
+        self.ready = False
 
 
-# db.create_table(User)
-# db.create_table(Session)
-
-
-class GVD(WebSocket):
+class GVD(WSON):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.name = ""
-        self.authorized = False
+        self.auth_name = ""
         self.auth_salt = ""
+        self.auth_sid = ""
 
-        self.user = False
-
-        self.handlers = {}
+        self.user = None
 
         self.on("sign", self.signup_ph1)
         self.on("login", self.auth_ph1)
-        self.on("sid", self.session)
-        self.on("test_auth", lambda: self.sendMessage(self.name + ": " + str(self.authorized)))
+        self.on("sid", self.continue_session)
+        self.on("test_auth", lambda: self.sendMessage(self.auth_name + ": " + str(self.user is not None)))
 
     def handleConnected(self):
         print(self.address, 'connected')
@@ -75,47 +60,37 @@ class GVD(WebSocket):
 
     def handleClose(self):
         print(self.address, 'closed')
+        self.logout()
         clients.remove(self)
-
-    def handleMessage(self):
-        data = self.data
-        print("< " + data)
-        msg_arr = json.loads(data)
-        names = msg_arr.keys()
-
-        for name in names:
-            if name in self.handlers:
-                self.handlers[name](msg_arr[name])
-
-    def on(self, msg, handler):
-        self.handlers[msg] = handler
-
-    def off(self, msg):
-        del self.handlers[msg]
-
-    def send(self, msg, data):
-        line = json.dumps({msg: data})
-        print("> " + line)
-        self.sendMessage(line)
-
-    def send_error(self, err_msg):
-        self.send("error", {"msg": err_msg})
 
     def create_session(self):
         self.auth_salt = ""
         sid = rnd_gen(32)
 
-        s = Session.create(sid=sid, god=self.name)
+        s = Session.create(sid=sid, god=self.auth_name)
         s.save()
 
         self.authorize()
         self.send("auth", {"status": "success", "sid": sid})
 
     def authorize(self):
-        self.authorized = True
+        for u in users:
+            if u.name == self.auth_name:
+                self.user = u
+        if not self.user:
+            u = ActiveUser(self.auth_name)
+            users.append(u)
+            self.user = u
+
         self.on("load", self.load_data)
         self.on("jump", self.jump)
-        self.on("join", self.join)
+        self.on("logout", self.close_session)
+
+    def logout(self):
+        self.user = None
+        # TODO: remove activeuser if all its clients have disconnected
+        self.off("load")
+        self.off("jump")
 
     # SIGN UP ##########
 
@@ -124,9 +99,9 @@ class GVD(WebSocket):
         if not god_info:
             self.send_error("Unknown god name")
             return
-        self.name = god_info['godname']
+        self.auth_name = god_info['godname']
 
-        user, created = User.get_or_create(god_name=self.name)
+        user, created = User.get_or_create(god_name=self.auth_name)
         if created or user.motto_login == "":
             motto = rnd_gen(MOTTO_LEN)
             user.motto_login = motto
@@ -138,10 +113,10 @@ class GVD(WebSocket):
         self.send("sign", {"motto": motto})
 
     def signup_ph2(self, _):
-        user = User.get(god_name=self.name)
+        user = User.get(god_name=self.auth_name)
         req_motto = user.motto_login
 
-        god_info = get_god_info(self.name)
+        god_info = get_god_info(self.auth_name)
         if not god_info:
             self.send_error("Unknown god name")
             return
@@ -156,7 +131,7 @@ class GVD(WebSocket):
 
     def passwd(self, data):
         password = data["password"]
-        user = User.get(god_name=self.name)
+        user = User.get(god_name=self.auth_name)
         user.password = hashlib.sha1(password.encode()).hexdigest()
         user.motto_login = ""
         user.save()
@@ -167,10 +142,10 @@ class GVD(WebSocket):
     # AUTH ##########
 
     def auth_ph1(self, data):
-        self.name = data["login"]
+        self.auth_name = data["login"]
 
         try:
-            User.get(god_name=self.name)
+            User.get(god_name=self.auth_name)
         except User.DoesNotExist:
             self.send_error("User does not registered")
             return
@@ -185,7 +160,7 @@ class GVD(WebSocket):
         if len(self.auth_salt) < 32:
             return
 
-        user = User.get(god_name=self.name)
+        user = User.get(god_name=self.auth_name)
         req = hashlib.sha1((user.password + self.auth_salt).encode()).hexdigest()
 
         if not data["password"] == req:
@@ -195,27 +170,52 @@ class GVD(WebSocket):
         self.off("auth")
         self.create_session()
 
-    def session(self, data):
+    def continue_session(self, data):
         try:
             s = Session.get(sid=data["sid"])
         except Session.DoesNotExist:
             self.send("sid", {"status": "declined"})
             return
 
-        self.name = s.god.god_name
+        self.auth_name = s.god.god_name
         self.authorize()
         self.send("sid", {"status": "accepted"})
 
+    def close_session(self):
+        s = Session.get(sid=self.auth_sid)
+        s.delete_instance()
+        self.logout()
+
+    # WORK ##########
+
     def load_data(self, _):
-        gods = [c.name for c in clients]
-        self.send("data", {"users": gods})
+        gods = list(set([c.user.name for c in clients]))
+        jump_info = {"active": (jump_time - int(time.time())) > 0}
+        if jump_info["active"]:
+            jump_info["delay"] = jump_time - int(time.time())
+            jump_info["ready"] = list(set([c.user.name for c in clients if c.user.ready]))
+        self.send("data", {"users": gods, "jump": jump_info})
 
     def jump(self, _):
-        for c in clients:
-            c.send("jump", {})
+        global jump_time
 
-    def join(self, _):
-        pass
+        if int(time.time()) < jump_time:  # join
+            if not self.user.ready:
+                for c in clients:
+                    c.send("ready", {
+                        "user": self.user.name
+                    })
+            self.user.ready = True
+        else:  # start new
+            jump_time = int(time.time()) + jump_delay
+
+            for c in clients:
+                c.user.ready = False
+                c.send("jump", {
+                    "delay": jump_time - int(time.time()),
+                    "user": self.user.name
+                })
+            self.user.ready = True
 
 
 server = SimpleWebSocketServer('', 8765, GVD)
