@@ -50,7 +50,8 @@ class GVD(WSON):
         self.user = None
 
         self.on("sign", self.signup_ph1)
-        self.on("login", self.auth_ph1)
+        self.on("salt", self.get_salt)
+        self.on("auth", self.auth)
         self.on("sid", self.continue_session)
         self.on("test_auth", lambda: self.sendMessage(self.auth_name + ": " + str(self.user is not None)))
 
@@ -60,37 +61,21 @@ class GVD(WSON):
 
     def handleClose(self):
         print(self.address, 'closed')
-        self.logout()
+        # TODO: remove activeuser if all its clients have disconnected
         clients.remove(self)
 
-    def create_session(self):
-        self.auth_salt = ""
-        sid = rnd_gen(32)
-
-        s = Session.create(sid=sid, god=self.auth_name)
-        s.save()
-
-        self.authorize()
-        self.send("auth", {"status": "success", "sid": sid})
-
-    def authorize(self):
+    def authorize(self, name):
         for u in users:
-            if u.name == self.auth_name:
+            if u.name == name:
                 self.user = u
         if not self.user:
-            u = ActiveUser(self.auth_name)
+            u = ActiveUser(name)
             users.append(u)
             self.user = u
 
         self.on("load", self.load_data)
         self.on("jump", self.jump)
         self.on("logout", self.close_session)
-
-    def logout(self):
-        self.user = None
-        # TODO: remove activeuser if all its clients have disconnected
-        self.off("load")
-        self.off("jump")
 
     # SIGN UP ##########
 
@@ -102,7 +87,7 @@ class GVD(WSON):
         self.auth_name = god_info['godname']
 
         user, created = User.get_or_create(god_name=self.auth_name)
-        if created or user.motto_login == "":
+        if created or user.motto_login is None or len(user.motto_login) < MOTTO_LEN:
             motto = rnd_gen(MOTTO_LEN)
             user.motto_login = motto
         else:
@@ -141,34 +126,37 @@ class GVD(WSON):
 
     # AUTH ##########
 
-    def auth_ph1(self, data):
-        self.auth_name = data["login"]
-
-        try:
-            User.get(god_name=self.auth_name)
-        except User.DoesNotExist:
-            self.send_error("User does not registered")
-            return
-
-        # TODO: Fake unregistered user to provide more security
-
-        self.auth_salt = rnd_gen(32)
-        self.on("auth", self.auth_ph2)
+    def get_salt(self, _):
+        if len(self.auth_salt) < 32:
+            self.auth_salt = rnd_gen(32)
         self.send("salt", {"salt": self.auth_salt})
 
-    def auth_ph2(self, data):
+    def auth(self, data):
         if len(self.auth_salt) < 32:
             return
 
-        user = User.get(god_name=self.auth_name)
+        name = data["login"]
+
+        try:
+            user = User.get(god_name=name)
+        except User.DoesNotExist:
+            self.send("auth", {"status": "fail"})
+            return
+
         req = hashlib.sha1((user.password + self.auth_salt).encode()).hexdigest()
 
         if not data["password"] == req:
             self.send("auth", {"status": "fail"})
             return
 
-        self.off("auth")
-        self.create_session()
+        self.auth_salt = ""
+        self.auth_sid = rnd_gen(32)
+
+        s = Session.create(sid=self.auth_sid, god=name)
+        s.save()
+
+        self.authorize(name)
+        self.send("auth", {"status": "success", "sid": self.auth_sid})
 
     def continue_session(self, data):
         try:
@@ -177,23 +165,28 @@ class GVD(WSON):
             self.send("sid", {"status": "declined"})
             return
 
-        self.auth_name = s.god.god_name
-        self.authorize()
+        self.auth_sid = s.sid
+        self.authorize(s.god.god_name)
         self.send("sid", {"status": "accepted"})
 
-    def close_session(self):
+    def close_session(self, _):
         s = Session.get(sid=self.auth_sid)
         s.delete_instance()
-        self.logout()
+        self.send("logout", {})
+        self.user = None
+        # TODO: remove activeuser if all its clients have disconnected
+        self.off("load")
+        self.off("jump")
+        self.off("logout")
 
     # WORK ##########
 
     def load_data(self, _):
-        gods = list(set([c.user.name for c in clients]))
+        gods = list(set([c.user.name for c in clients if c.user]))
         jump_info = {"active": (jump_time - int(time.time())) > 0}
         if jump_info["active"]:
             jump_info["delay"] = jump_time - int(time.time())
-            jump_info["ready"] = list(set([c.user.name for c in clients if c.user.ready]))
+            jump_info["ready"] = list(set([c.user.name for c in clients if c.user and c.user.ready]))
         self.send("data", {"users": gods, "jump": jump_info})
 
     def jump(self, _):

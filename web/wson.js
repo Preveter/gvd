@@ -6,7 +6,8 @@
  */
 function WSON(address){
     var ws = new WebSocket(address);
-    var handlers = [];
+    var handlers = {};
+    var requests = {};
 
     ws.onmessage = function(event){
         console.log(event.data);
@@ -19,6 +20,11 @@ function WSON(address){
             var name = names[i];
             if (name in handlers){
                 handlers[name](msg_arr[name]);
+            }
+
+            if (name in requests){
+                requests[name](msg_arr[name]);
+                delete requests[name];
             }
         }
     };
@@ -35,6 +41,11 @@ function WSON(address){
     };
     this.off = function(msg){
         delete handlers[msg];
+    };
+
+    this.request = function(msg, args, handler){
+        requests[msg] = handler;
+        this.send(msg, args);
     };
 
     this.send = function(msg, data){

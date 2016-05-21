@@ -7,6 +7,16 @@
         return matches ? decodeURIComponent(matches[1]) : undefined;
     }
 
+    function makeEl(name, options){
+        var el = document.createElement(name);
+        for(var key in options) {
+           if (options.hasOwnProperty(key)) {
+               el[key] = options[key];
+           }
+        }
+        return el;
+    }
+
     function GVD(){
         this.users = [];
 
@@ -60,33 +70,42 @@
         };
 
         this.draw = function(){
-            el.innerHTML = "";
-
-            var content = document.createElement("div");
-            content.id = "content";
-
-            var tmr = document.createElement("div");
-            tmr.id = "timer";
-            tmr.innerHTML = "";
+            var tmr = makeEl("div", {
+                id: "timer",
+                innerHTML: ""
+            });
             timerElement = tmr;
-            content.appendChild(tmr);
 
-            var jump = document.createElement("input");
-            jump.type = "button";
-            jump.id = "jumpButton";
-            jump.value = "Прыг!";
+            var jump = makeEl("input", {
+                type: "button",
+                id: "jumpButton",
+                value: "Прыг!"
+            });
             jump.onclick = function(){
                 wson.send("jump");
             };
-            content.appendChild(jump);
 
-            var lst = document.createElement("div");
-            lst.id = "userList";
+            var exit = makeEl("input", {
+                type: "button",
+                id: "exitButton",
+                value: "Выход!"
+            });
+            exit.onclick = function(){
+                wson.send("logout");
+            };
+
+            var lst = makeEl("div", {id: "userList"});
             this.users.forEach(function(user){
                 lst.appendChild(user.element);
             });
+
+            var content = makeEl("div",{id: "content"});
+            content.appendChild(tmr);
+            content.appendChild(jump);
+            content.appendChild(exit);
             content.appendChild(lst);
 
+            el.innerHTML = "";
             el.appendChild(content);
         };
 
@@ -120,7 +139,7 @@
     
     wson.onopen(function(){
         console.log('Connected');
-        sidAuth()
+        checkSID()
     });
 
     wson.onclose(function(event) {
@@ -132,57 +151,45 @@
         console.log('Code: ' + event.code + '; reason: ' + event.reason);
     });
 
-    var sidAuth = function(){
+    var checkSID = function(){
         var sid = getCookie("sid");
-        if (sid !== undefined){
-            wson.on("sid", function(d){
-                if (d.status == "accepted"){
-                    console.log("SID accepted!");
-                    loadData();
-                }else{
-                    console.log("Wrong sid");
-                    requestLogin();
-                }
-                wson.off("sid");
-            });
-            wson.send("sid", {sid: sid});
-        }else{
+
+        if (sid === undefined){
             console.log("No SID to send.");
             requestLogin();
+            return;
         }
+
+        wson.request("sid", {sid: sid}, function(d){
+            if (d["status"] == "accepted"){
+                console.log("SID accepted!");
+                loadData();
+            }else{
+                console.log("Wrong sid");
+                requestLogin();
+            }
+        });
     };
 
     var requestLogin = function(){
-        var loginForm = document.createElement("div");
-        loginForm.id = "loginForm";
-
-        var nameInput = document.createElement("input");
-        nameInput.type = "text";
-        nameInput.id = "nameInput";
-        nameInput.value = "Preveter";
-        loginForm.appendChild(nameInput);
-
-        var passwordInput = document.createElement("input");
-        passwordInput.type = "password";
-        passwordInput.id = "passwordInput";
-        passwordInput.value = "11111111";
-        loginForm.appendChild(passwordInput);
-
-        var confirm = document.createElement("input");
-        confirm.type = "button";
-        confirm.id = "confirmButton";
-        confirm.value = "Войти";
-        confirm.onclick = function(){
-            wson.send("login", {login: nameInput.value});
-        };
-        loginForm.appendChild(confirm);
-
-        wson.on("salt", function(d){
-            var hash1 = Sha1.hash(passwordInput.value);
-            var hash2 = Sha1.hash(hash1 + d["salt"]);
-            wson.send("auth", {password: hash2});
-            wson.off("salt");
+        var salt = null;
+        wson.request("salt", {}, function(d){
+            salt = d["salt"];
+            console.log("Salt: " + salt);
         });
+
+        var nameInput = makeEl("input", {type: "text", id: "nameInput", value: "Preveter"});
+        var passwordInput = makeEl("input", {type: "password", id: "passwordInput", value: "11111111"});
+
+        var sign = makeEl("input", {type: "button", id: "signupButton", value: "Регистрация"});
+        sign.onclick = signup;
+
+        var confirm = makeEl("input", {type: "button", id: "confirmButton", value: "Войти"});
+        confirm.onclick = function(){
+            var hash1 = Sha1.hash(passwordInput.value);
+            var hash2 = Sha1.hash(hash1 + salt);
+            wson.send("auth", {login: nameInput.value, password: hash2});
+        };
         
         wson.on("auth", function(d){
             if (d.status == "success"){
@@ -193,12 +200,78 @@
                 loadData();
                 wson.off("auth");
             }else{
-                alert("Неверный пароль");
+                alert("Неверный логин или пароль");
             }
         });
 
+        var loginForm = makeEl("div", {id: "loginForm"});
+        loginForm.appendChild(nameInput);
+        loginForm.appendChild(passwordInput);
+        loginForm.appendChild(confirm);
+        loginForm.appendChild(sign);
+
         document.body.innerHTML = "";
         document.body.appendChild(loginForm);
+    };
+
+    var signup = function(){
+        var signupForm = document.createElement("div");
+        signupForm.id = "signupForm";
+
+        var nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.id = "nameInput";
+        nameInput.value = "Preveter";
+        signupForm.appendChild(nameInput);
+
+        var mottoInput = document.createElement("input");
+
+        var confirm = document.createElement("input");
+        confirm.type = "button";
+        confirm.id = "confirmButton";
+        confirm.value = "Ok";
+        confirm.onclick = function(){
+            wson.on("sign", function(d){
+                mottoInput.type = "text";
+                mottoInput.value = d["motto"];
+                mottoInput.onclick = function(){
+                    mottoInput.select();
+                };
+                signupForm.replaceChild(mottoInput, nameInput);
+
+                confirm.onclick = function(){
+                    wson.send("motto");
+                };
+                wson.off("sign");
+            });
+
+            wson.send("sign", {login: nameInput.value});
+
+            wson.on("motto", function(d){
+                if (d["status"] == "accepted"){
+                    var passInput = document.createElement("input");
+                    passInput.type = "text";
+                    passInput.value = "";
+                    
+                    signupForm.replaceChild(passInput, mottoInput);
+
+                    confirm.onclick = function(){
+                        wson.on("success", function(){
+                            wson.off("success");
+                            requestLogin();
+                        });
+                        wson.send("passwd", {"password": passInput.value});
+                    };
+                    wson.off("motto");
+                }else{
+                    alert("Девиз в API еще не обновился. Попробуйте через минутку.");
+                }
+            });
+        };
+        signupForm.appendChild(confirm);
+
+        document.body.innerHTML = "";
+        document.body.appendChild(signupForm);
     };
 
     var loadData = function(){
@@ -227,5 +300,9 @@
         wson.on("ready", function(d){
             alert(d["name"] + " has joined the party!");
         });
+
+        wson.on("logout", function(){
+            requestLogin();
+        })
     };
 })();
