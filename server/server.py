@@ -4,6 +4,7 @@ import random
 import string
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from models import User, Session
@@ -19,11 +20,21 @@ def rnd_gen(size=8, chars=string.ascii_lowercase + string.digits):
 
 def get_god_info(name):
     try:
-        raw = urllib.request.urlopen("http://godville.net/gods/api/" + name + ".json").read()
+        raw = urllib.request.urlopen("http://godville.net/gods/api/" + urllib.parse.quote(name) + ".json").read()
     except urllib.error.HTTPError:
         return False
     return json.loads(raw.decode("utf-8"))
 
+
+def check_users():
+    global users
+    rm = users[:]
+    for c in clients:
+        if c.user in rm: rm.remove(c.user)
+    for u in rm:
+        for c in clients:
+            c.send("user", {"name": u.name, "status": "off"})
+    users = [item for item in users if item not in rm]
 
 clients = []
 users = []
@@ -61,7 +72,8 @@ class GVD(WSON):
 
     def handleClose(self):
         print(self.address, 'closed')
-        # TODO: remove activeuser if all its clients have disconnected
+        self.user = None
+        check_users()
         clients.remove(self)
 
     def authorize(self, name):
@@ -72,8 +84,10 @@ class GVD(WSON):
             u = ActiveUser(name)
             users.append(u)
             self.user = u
+            for c in clients:
+                c.send("user", {"name": u.name, "status": "on"})
 
-        self.on("load", self.load_data)
+        self.on("data", self.load_data)
         self.on("jump", self.jump)
         self.on("logout", self.close_session)
 
@@ -111,18 +125,18 @@ class GVD(WSON):
             self.send("motto", {"status": "declined"})
         else:
             self.off("motto")
-            self.on("passwd", self.passwd)
+            self.on("password", self.signup_ph3)
             self.send("motto", {"status": "accepted"})
 
-    def passwd(self, data):
+    def signup_ph3(self, data):
         password = data["password"]
         user = User.get(god_name=self.auth_name)
         user.password = hashlib.sha1(password.encode()).hexdigest()
         user.motto_login = ""
         user.save()
 
-        self.off("passwd")
-        self.send("success", {})
+        self.off("password")
+        self.send("password", {"status": "changed"})
 
     # AUTH ##########
 
@@ -170,12 +184,15 @@ class GVD(WSON):
         self.send("sid", {"status": "accepted"})
 
     def close_session(self, _):
-        s = Session.get(sid=self.auth_sid)
-        s.delete_instance()
+        try:
+            s = Session.get(sid=self.auth_sid)
+            s.delete_instance()
+        except Session.DoesNotExist:
+            pass
         self.send("logout", {})
         self.user = None
-        # TODO: remove activeuser if all its clients have disconnected
-        self.off("load")
+        check_users()
+        self.off("data")
         self.off("jump")
         self.off("logout")
 
@@ -183,11 +200,15 @@ class GVD(WSON):
 
     def load_data(self, _):
         gods = list(set([c.user.name for c in clients if c.user]))
+        me = {
+            "name": self.user.name,
+            "ready": self.user.ready
+        }
         jump_info = {"active": (jump_time - int(time.time())) > 0}
         if jump_info["active"]:
             jump_info["delay"] = jump_time - int(time.time())
             jump_info["ready"] = list(set([c.user.name for c in clients if c.user and c.user.ready]))
-        self.send("data", {"users": gods, "jump": jump_info})
+        self.send("data", {"users": gods, "me": me, "jump": jump_info})
 
     def jump(self, _):
         global jump_time

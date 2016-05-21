@@ -19,21 +19,26 @@
 
     function GVD(){
         this.users = [];
-
-/*        var states = ["init", "login", "signup", "work"];
-        this.state = "";
-        this.changeState = function(state){
-            if (!~states.indexOf(state)) throw new Error("Wrong state name");
-            this.state = state;
-        };*/
-
+        this.me = {
+            name: "",
+            ready: false
+        };
+        
         var timer_start = 0,
             timer_delay = 0;
         var timer;
-        var timerElement = null;
+        var timerElement = makeEl("div", {id: "timer", innerHTML: ""});
 
         var el = this.element = document.createElement("div");
         el.id = "gvd";
+
+        this.setMyName = function(name){
+            this.me.name = name;
+        };
+
+        this.setMyStatus = function(val){
+            this.me.ready = val;
+        };
 
         this.addUser = function(user){
             this.users.push(user);
@@ -48,15 +53,30 @@
             this.draw();
         };
 
+        this.clearUsers = function(){
+            this.users = [];
+            this.draw();
+        };
+
+        this.getUserByName = function(userName){
+            for (var i = 0; i < this.users.length; i++){
+                var u = this.users[i];
+                if (u.name == userName){
+                    return u;
+                }
+            }
+        };
+
         this.startTimer = function(delay){
             timer_start = Date.now();
             timer_delay = delay*1000;
             timer = setInterval(function(){
+                // TODO: удаление gvd не приводит к удалению таймера: поэтому при перелогине он остаётся.
                 var now = new Date();
                 if (now > timer_start + timer_delay){
                     clearInterval(timer);
                     timerElement ? timerElement.innerHTML = "" : false;
-                    alert("ПРЫГ!");
+                    if (gvd.me.ready) alert("ПРЫГ!");
                 }else{
                     var jt = new Date(timer_start + timer_delay);
                     var left = parseInt((jt - now)/1000);
@@ -70,12 +90,6 @@
         };
 
         this.draw = function(){
-            var tmr = makeEl("div", {
-                id: "timer",
-                innerHTML: ""
-            });
-            timerElement = tmr;
-
             var jump = makeEl("input", {
                 type: "button",
                 id: "jumpButton",
@@ -100,7 +114,7 @@
             });
 
             var content = makeEl("div",{id: "content"});
-            content.appendChild(tmr);
+            content.appendChild(timerElement);
             content.appendChild(jump);
             content.appendChild(exit);
             content.appendChild(lst);
@@ -115,15 +129,22 @@
 
     function User(name){
         this.name = name;
-        this.ready = "";
+        var ready = false;
 
         var el = this.element = document.createElement("div");
         el.className = "userInfo";
         el.id = "name";
 
+        this.setReady = function(val){
+            if (ready != val){
+                ready = val;
+                this.draw();
+            }
+        };
+
         this.draw = function(){
             el.innerHTML = this.name;
-            if (this.ready) el.style.background = "#88ff88";
+            if (ready) el.style.background = "#88ff88";
             else el.style.background = "#ffffff";
         };
 
@@ -131,7 +152,7 @@
         return this;
     }
 
-    var gvd = window.gvd = new GVD();
+    var gvd;
 
     // Web Sockets
 
@@ -172,6 +193,27 @@
     };
 
     var requestLogin = function(){
+        
+        function auth(){
+            var hash1 = Sha1.hash(passwordInput.value);
+            var hash2 = Sha1.hash(hash1 + salt);
+            wson.send("auth", {login: nameInput.value, password: hash2});
+        }
+        
+        wson.on("auth", function(d){
+            if (d.status != "success") {
+                alert("Неверный логин или пароль");
+                return;
+            }
+            
+            var date = new Date;
+            date.setDate(date.getDate() + 365);
+            document.cookie = "sid=" + d.sid + "; path=/; expires=" + date.toUTCString();
+            console.log("Success auth");
+            loadData();
+            wson.off("auth");
+        });
+        
         var salt = null;
         wson.request("salt", {}, function(d){
             salt = d["salt"];
@@ -185,24 +227,7 @@
         sign.onclick = signup;
 
         var confirm = makeEl("input", {type: "button", id: "confirmButton", value: "Войти"});
-        confirm.onclick = function(){
-            var hash1 = Sha1.hash(passwordInput.value);
-            var hash2 = Sha1.hash(hash1 + salt);
-            wson.send("auth", {login: nameInput.value, password: hash2});
-        };
-        
-        wson.on("auth", function(d){
-            if (d.status == "success"){
-                var date = new Date;
-                date.setDate(date.getDate() + 365);
-                document.cookie = "sid=" + d.sid + "; path=/; expires=" + date.toUTCString();
-                console.log("Success auth");
-                loadData();
-                wson.off("auth");
-            }else{
-                alert("Неверный логин или пароль");
-            }
-        });
+        confirm.onclick = auth;
 
         var loginForm = makeEl("div", {id: "loginForm"});
         loginForm.appendChild(nameInput);
@@ -215,59 +240,46 @@
     };
 
     var signup = function(){
-        var signupForm = document.createElement("div");
-        signupForm.id = "signupForm";
-
-        var nameInput = document.createElement("input");
-        nameInput.type = "text";
-        nameInput.id = "nameInput";
-        nameInput.value = "Preveter";
-        signupForm.appendChild(nameInput);
-
-        var mottoInput = document.createElement("input");
-
-        var confirm = document.createElement("input");
-        confirm.type = "button";
-        confirm.id = "confirmButton";
-        confirm.value = "Ok";
-        confirm.onclick = function(){
-            wson.on("sign", function(d){
-                mottoInput.type = "text";
-                mottoInput.value = d["motto"];
-                mottoInput.onclick = function(){
-                    mottoInput.select();
-                };
+        
+        function sendLogin(){
+            wson.request("sign", {login: nameInput.value}, function(d){
                 signupForm.replaceChild(mottoInput, nameInput);
-
-                confirm.onclick = function(){
-                    wson.send("motto");
-                };
-                wson.off("sign");
+                mottoInput.value = d["motto"];
+                
+                confirm.value = "Test";
+                confirm.onclick = testMotto;
             });
+        }
+        
+        function testMotto(){
+            wson.send("motto");
+        }
+        
+        function sendPassword(){
+            wson.request("password", {"password": passInput.value}, requestLogin);
+        }
+        
+        wson.on("motto", function(d){
+            if (d["status"] != "accepted") {
+                alert("Девиз в API еще не обновился. Попробуйте через минутку.");
+                return;
+            }
+            
+            signupForm.replaceChild(passInput, mottoInput);
 
-            wson.send("sign", {login: nameInput.value});
-
-            wson.on("motto", function(d){
-                if (d["status"] == "accepted"){
-                    var passInput = document.createElement("input");
-                    passInput.type = "text";
-                    passInput.value = "";
-                    
-                    signupForm.replaceChild(passInput, mottoInput);
-
-                    confirm.onclick = function(){
-                        wson.on("success", function(){
-                            wson.off("success");
-                            requestLogin();
-                        });
-                        wson.send("passwd", {"password": passInput.value});
-                    };
-                    wson.off("motto");
-                }else{
-                    alert("Девиз в API еще не обновился. Попробуйте через минутку.");
-                }
-            });
-        };
+            confirm.onclick = sendPassword;
+            wson.off("motto");
+        });
+        
+        var nameInput = makeEl("input", {type: "text", id: "nameInput", value: "Preveter"});
+        var passInput = makeEl("input", {type: "text", value: ""});
+        var mottoInput = makeEl("input", {type: "text", onclick: "this.select();"});
+        
+        var confirm = makeEl("input", {type: "button", id: "confirmButton", value: "Ok"});
+        confirm.onclick = sendLogin;
+        
+        var signupForm = makeEl("div", {id: "signupForm"});
+        signupForm.appendChild(nameInput);
         signupForm.appendChild(confirm);
 
         document.body.innerHTML = "";
@@ -275,30 +287,58 @@
     };
 
     var loadData = function(){
-        wson.on("data", function(d){
+        wson.request("data", {}, function(d){
             console.log("Data loaded!");
+
+            gvd = new GVD();
+            gvd.setMyName(d["me"]["name"]);
+            gvd.setMyStatus(d["me"]["ready"]);
+
+            gvd.clearUsers();
             d["users"].forEach(function(u){
                 var user = new User(u);
                 gvd.addUser(user);
             });
 
             if (d["jump"]["active"]){
-                // TODO: Mark users
                 gvd.startTimer(d["jump"]["delay"]);
+                var users = d["jump"]["ready"];
+                users.forEach(function(name){
+                    var u = gvd.getUserByName(name);
+                    u.setReady(true);
+                });
             }
 
             document.body.innerHTML = "";
             document.body.appendChild(gvd.element);
         });
-        wson.send("load");
 
         wson.on("jump", function(d){
-            alert(d["user"] + " has created a party!");
             gvd.startTimer(d["delay"]);
+            var u = gvd.getUserByName(d["user"]);
+            u.setReady(true);
+            if (d["user"] == gvd.me.name){
+                gvd.setMyStatus(true);
+            }else{
+                alert(d["user"] + " has created a party!");
+            }
         });
 
         wson.on("ready", function(d){
-            alert(d["name"] + " has joined the party!");
+            var u = gvd.getUserByName(d["user"]);
+            u.setReady(true);
+            if (d["user"] == gvd.me.name)
+                gvd.setMyStatus(true);
+        });
+
+        wson.on("user", function(d){
+            if (d["status"] == "on"){
+                var u = new User(d["name"]);
+                gvd.addUser(u);
+            }
+            if (d["status"] == "off"){
+                gvd.removeUser(gvd.getUserByName(d["name"]));
+            }
         });
 
         wson.on("logout", function(){
