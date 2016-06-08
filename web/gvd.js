@@ -123,6 +123,19 @@
             el.appendChild(content);
         };
 
+        this.reset = function(){
+            this.users = [];
+            this.me = {
+                name: "",
+                ready: false
+            };
+
+            timer_start = 0;
+            timer_delay = 0;
+            
+            clearInterval(timer);
+        };
+
         this.draw();
         return this;
     }
@@ -152,7 +165,7 @@
         return this;
     }
 
-    var gvd;
+    var gvd = new GVD();
 
     // Web Sockets
 
@@ -290,7 +303,7 @@
         wson.request("data", {}, function(d){
             console.log("Data loaded!");
 
-            gvd = new GVD();
+            gvd.reset();
             gvd.setMyName(d["me"]["name"]);
             gvd.setMyStatus(d["me"]["ready"]);
 
