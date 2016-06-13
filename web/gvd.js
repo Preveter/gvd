@@ -21,7 +21,7 @@
         el.querySelector("#jumpButton").onclick = function(){
             wson.send("jump");
         };
-        el.querySelector("#exitButton").onclick.onclick = function(){
+        el.querySelector("#exitButton").onclick = function(){
             wson.send("logout");
         };
 
@@ -78,7 +78,6 @@
             timer_start = Date.now();
             timer_delay = delay*1000;
             timer = setInterval(function(){
-                // TODO: удаление gvd не приводит к удалению таймера: поэтому при перелогине он остаётся.
                 var now = new Date();
                 if (now > timer_start + timer_delay){
                     clearInterval(timer);
@@ -142,28 +141,22 @@
                 }
             });
             
-            wson.request("data", {}, function(d){
-                console.log("Data loaded!");
+            wson.fetch("data")
+                .then(d => {
+                    console.log("Data loaded!");
 
-                t.reset();
-                t.setMyName(d["me"]["name"]);
-                t.setMyStatus(d["me"]["ready"]);
+                    this.setMyName(d["me"]["name"]);
+                    this.setMyStatus(d["me"]["ready"]);
 
-                t.clearUsers();
-                d["users"].forEach(function(u){
-                    var user = new User(u);
-                    t.addUser(user);
+                    this.clearUsers();
+                    d["users"].forEach(name => this.addUser(new User(name)));
+
+                    if (d["jump"]["active"]){
+                        this.startTimer(d["jump"]["delay"]);
+                        var users = d["jump"]["ready"];
+                        users.forEach(name => this.getUserByName(name).setReady(true));
+                    }
                 });
-
-                if (d["jump"]["active"]){
-                    t.startTimer(d["jump"]["delay"]);
-                    var users = d["jump"]["ready"];
-                    users.forEach(function(name){
-                        var u = t.getUserByName(name);
-                        u.setReady(true);
-                    });
-                }
-            });
         };
         
         this.deactivate = function(){
@@ -171,8 +164,7 @@
             wson.off("jump");
             wson.off("ready");
             wson.off("user");
-            wson.off("logout");
-            wson.off("data");
+            this.reset();
         };
 
         return this;
@@ -207,11 +199,10 @@
     function LoginManager(){
 
         var el = this.element = document.getElementById("loginContainer");
-        //el.querySelector("#signupButton").onclick = this.signup;
-        el.querySelector("#confirmButton").onclick = this.send;
-        
-        var passInput = el.querySelector("#passInput");
-        var nameInput = el.querySelector("#nameInput");
+
+        var loginForm = el.querySelector("#loginForm");
+        var passInput = loginForm.querySelector("#passInput");
+        var nameInput = loginForm.querySelector("#nameInput");
 
         var loginHandler = function(){};
         var logoutHandler = function(){};
@@ -222,12 +213,6 @@
 
         this.onlogout = function(h){
             logoutHandler = h;
-        };
-
-        this.send = function(){
-            var hash1 = Sha1.hash(passInput.value);
-            var hash2 = Sha1.hash(hash1 + salt);
-            wson.send("auth", {login: nameInput.value, password: hash2});
         };
         
         this.auth = function(sid){
@@ -247,35 +232,92 @@
 
         this.logout = function(){
             logoutHandler();
+            wson.off("logout");
             this.activate();
         };
         
-        this.showLoginForm = function(){
-            
-            // TODO: Show login form;
-            
-            var salt = null;
-            wson.request("salt", {}, function(d){
-                salt = d["salt"];
-                console.log("Salt: " + salt);
-            });
+        this.send = function(){
+            Promise.resolve()
+                .then(() => wson.fetch("salt"))
+                .then( d => Sha1.hash(Sha1.hash(passInput.value) + d["salt"]))
+                .then( hash => wson.fetch("auth", {login: nameInput.value, password: hash}))
+                .then( d => {
+                    if (d.status != "success") {
+                        alert("Неверный логин или пароль");
+                        return;
+                    }
 
-            var t = this;
-            wson.on("auth", function(d){
-                if (d.status != "success") {
-                    alert("Неверный логин или пароль");
-                    return;
-                }
-                
-                wson.off("auth");
-                t.auth(d["sid"]);
-            });
-            
+                    loginForm.style.display = "none";
+                    this.auth(d["sid"]);
+                });
+        };
+        
+        this.showLoginForm = function(){
+            loginForm.style.display = "block";
+
+            this.element.querySelector("#confirmButton").onclick = this.send.bind(this);
+            this.element.querySelector("#signupButton").onclick = this.signup.bind(this);
+        };
+
+        this.signup = function(){
+            let signupContainer = document.getElementById("signupContainer");
+            let proceedBtn = signupContainer.querySelector("#signupProceed");
+
+            let signupForm1 = signupContainer.querySelector("#signupForm1");
+            let nameInput = signupContainer.querySelector("#s_nameInput");
+
+            let signupForm2 = signupContainer.querySelector("#signupForm2");
+            let mottoInput = signupContainer.querySelector("#s_mottoInput");
+
+            let signupForm3 = signupContainer.querySelector("#signupForm3");
+            let passInput = signupContainer.querySelector("#s_passInput");
+
+            let testMotto = function(){
+                return new Promise(resolve => {
+                    proceedBtn.onclick = () => {
+                        wson.fetch("motto")
+                            .then(d => {
+                                if (d["status"] != "accepted") {
+                                    alert("Девиз в API еще не обновился. Попробуйте через минутку.");
+                                    return;
+                                }
+                                resolve();
+                            })
+                    };
+                })
+            };
+
+            Promise.resolve()
+                .then(() => {
+                    loginForm.style.display = "none";
+                    signupContainer.style.display = "block";
+                    signupForm1.style.display = "block";
+                    return new Promise(resolve => proceedBtn.onclick = resolve)
+                })
+                .then(() => wson.fetch("sign", {login: nameInput.value}))
+                .then(d => {
+                    signupForm1.style.display = "none";
+                    signupForm2.style.display = "block";
+                    mottoInput.value = d["motto"];
+                    return new Promise(resolve => proceedBtn.onclick = resolve)
+                })
+                .then(() => testMotto())
+                .then(() => {
+                    signupForm2.style.display = "none";
+                    signupForm3.style.display = "block";
+                    return new Promise(resolve => proceedBtn.onclick = resolve)
+                })
+                .then(() => wson.fetch("password", {"password": passInput.value}))
+                .then(() => {
+                    signupForm3.style.display = "none";
+                    signupContainer.style.display = "none";
+                    this.showLoginForm();
+                });
+
         };
 
         this.activate = function() {
             this.element.style.display = "block";
-            // TODO: Don't show login form just now
             
             var sid = getCookie("sid");
 
@@ -283,17 +325,17 @@
                 console.log("No SID to send.");
                 this.showLoginForm();
             } else {
-                var t = this;
-                wson.request("sid", {sid: sid}, function (d) {
-                    if (d["status"] == "accepted") {
-                        console.log("SID accepted!");
-
-                        t.auth(sid);
-                    } else {
-                        console.log("Wrong sid");
-                        t.showLoginForm();
-                    }
-                });
+                console.log("Checking sid...");
+                wson.fetch("sid", {sid: sid})
+                    .then(d => {
+                        if (d["status"] == "accepted") {
+                            console.log("SID accepted!");
+                            this.auth(sid);
+                        } else {
+                            console.log("Wrong sid");
+                            this.showLoginForm();
+                        }
+                    });
             }
         };
         
@@ -305,78 +347,38 @@
     }
 
     ///////////////////////////////////////////
+
+    var wson, gvd, login;
     
-    var wson = new WSON("ws://127.0.0.1:8765/");
-    
-    wson.onopen(function(){
-        console.log('Connected');
-        window.setTimeout(login.activate, 1000); // TODO: ON DOM LOADED!!!
-    });
-
-    wson.onclose(function(event) {
-        if (event.wasClean){
-            console.log('Connection closed');
-        }else{
-            console.log('Connection lost');
-        }
-        console.log('Code: ' + event.code + '; reason: ' + event.reason);
-    });
-
-    ///////////////////////////////////////////
-
-    var gvd = new GVD();
-    var login = new LoginManager();
-
-    login.onlogin(function(){
-        gvd.activate();
-    });
-
-    login.onlogout(function(){
-        gvd.activate();
-    });
-
-/*
-    var signup = function(){
+    window.run = function(){
         
-        function sendLogin(){
-            wson.request("sign", {login: nameInput.value}, function(d){
-                // TODO: SHOW SECOND PHASE
-                mottoInput.value = d["motto"];
+        wson = new WSON("ws://127.0.0.1:8765/");
 
-                proceedBtn.onclick = testMotto;
-            });
-        }
-        
-        function testMotto(){
-            wson.send("motto");
-        }
-        
-        function sendPassword(){
-            wson.request("password", {"password": passInput.value}, showLoginForm);
-        }
-        
-        wson.on("motto", function(d){
-            if (d["status"] != "accepted") {
-                alert("Девиз в API еще не обновился. Попробуйте через минутку.");
-                return;
-            }
+        gvd = new GVD();
+        login = new LoginManager();
 
-            // TODO: SHOW THIRD PHASE
-
-            proceedBtn.onclick = sendPassword;
-            wson.off("motto");
+        login.onlogin(function(){
+            gvd.activate();
         });
 
-        var signupContainer = document.getElementById("signupContainer");
+        login.onlogout(function(){
+            gvd.deactivate();
+        });
 
-        var proceedBtn = signupContainer.querySelector("#signupProceed");
-        var nameInput = signupContainer.querySelector("#s_nameInput");
-        var mottoInput = signupContainer.querySelector("#s_mottoInput");
-        var passInput = signupContainer.querySelector("#s_passInput");
+        wson.onopen(function(){
+            console.log('Connected');
+            login.activate();
+        });
+    
+        wson.onclose(function(event) {
+            if (event.wasClean){
+                console.log('Connection closed');
+            }else{
+                console.log('Connection lost');
+            }
+            console.log('Code: ' + event.code + '; reason: ' + event.reason);
+        });
 
-        proceedBtn.onclick = sendLogin;
-
-        // TODO: SHOW FIRST PHASE
     };
-*/
+
 })();

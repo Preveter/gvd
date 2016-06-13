@@ -43,9 +43,13 @@ function WSON(address){
         delete handlers[msg];
     };
 
-    this.request = function(msg, args, handler){
-        requests[msg] = handler;
-        this.send(msg, args);
+    this.fetch = function(msg, args = {}){
+        return new Promise(resolve => {
+            requests[msg] = function(a){
+                resolve(a);
+            };
+            this.send(msg, args);
+        });
     };
 
     this.send = function(msg, data){
