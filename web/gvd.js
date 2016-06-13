@@ -7,15 +7,7 @@
         return matches ? decodeURIComponent(matches[1]) : undefined;
     }
 
-    function makeEl(name, options){
-        var el = document.createElement(name);
-        for(var key in options) {
-           if (options.hasOwnProperty(key)) {
-               el[key] = options[key];
-           }
-        }
-        return el;
-    }
+    ////////////////////////////////////////////////////
 
     function GVD(){
         this.users = [];
@@ -23,14 +15,21 @@
             name: "",
             ready: false
         };
+
+        var el = this.element = document.getElementById("listContainer");
         
+        el.querySelector("#jumpButton").onclick = function(){
+            wson.send("jump");
+        };
+        el.querySelector("#exitButton").onclick.onclick = function(){
+            wson.send("logout");
+        };
+
         var timer_start = 0,
             timer_delay = 0;
         var timer;
-        var timerElement = makeEl("div", {id: "timer", innerHTML: ""});
-
-        var el = this.element = document.createElement("div");
-        el.id = "gvd";
+        var timerElement = el.querySelector("#timer");
+        
 
         this.setMyName = function(name){
             this.me.name = name;
@@ -42,7 +41,7 @@
 
         this.addUser = function(user){
             this.users.push(user);
-            this.draw();
+            this.redrawUsers();
         };
 
         this.removeUser = function(user){
@@ -50,12 +49,20 @@
             if (~i){
                 this.users.splice(i,1);
             }
-            this.draw();
+            this.redrawUsers();
         };
 
         this.clearUsers = function(){
             this.users = [];
-            this.draw();
+            this.redrawUsers();
+        };
+
+        this.redrawUsers = function(){
+            var lst = el.querySelector("#userList");
+            lst.innerHTML = "";
+            this.users.forEach(function(user){
+                lst.appendChild(user.element);
+            });
         };
 
         this.getUserByName = function(userName){
@@ -89,40 +96,6 @@
             },300)
         };
 
-        this.draw = function(){
-            var jump = makeEl("input", {
-                type: "button",
-                id: "jumpButton",
-                value: "Прыг!"
-            });
-            jump.onclick = function(){
-                wson.send("jump");
-            };
-
-            var exit = makeEl("input", {
-                type: "button",
-                id: "exitButton",
-                value: "Выход!"
-            });
-            exit.onclick = function(){
-                wson.send("logout");
-            };
-
-            var lst = makeEl("div", {id: "userList"});
-            this.users.forEach(function(user){
-                lst.appendChild(user.element);
-            });
-
-            var content = makeEl("div",{id: "content"});
-            content.appendChild(timerElement);
-            content.appendChild(jump);
-            content.appendChild(exit);
-            content.appendChild(lst);
-
-            el.innerHTML = "";
-            el.appendChild(content);
-        };
-
         this.reset = function(){
             this.users = [];
             this.me = {
@@ -135,8 +108,73 @@
             
             clearInterval(timer);
         };
+        
+        this.activate = function(){
+            this.element.style.display = "block";
+            
+            var t = this;
+            
+            wson.on("jump", function(d){
+                t.startTimer(d["delay"]);
+                var u = t.getUserByName(d["user"]);
+                u.setReady(true);
+                if (d["user"] == t.me.name){
+                    t.setMyStatus(true);
+                }else{
+                    alert(d["user"] + " has created a party!");
+                }
+            });
 
-        this.draw();
+            wson.on("ready", function(d){
+                var u = t.getUserByName(d["user"]);
+                u.setReady(true);
+                if (d["user"] == t.me.name)
+                    t.setMyStatus(true);
+            });
+
+            wson.on("user", function(d){
+                if (d["status"] == "on"){
+                    var u = new User(d["name"]);
+                    t.addUser(u);
+                }
+                if (d["status"] == "off"){
+                    t.removeUser(t.getUserByName(d["name"]));
+                }
+            });
+            
+            wson.request("data", {}, function(d){
+                console.log("Data loaded!");
+
+                t.reset();
+                t.setMyName(d["me"]["name"]);
+                t.setMyStatus(d["me"]["ready"]);
+
+                t.clearUsers();
+                d["users"].forEach(function(u){
+                    var user = new User(u);
+                    t.addUser(user);
+                });
+
+                if (d["jump"]["active"]){
+                    t.startTimer(d["jump"]["delay"]);
+                    var users = d["jump"]["ready"];
+                    users.forEach(function(name){
+                        var u = t.getUserByName(name);
+                        u.setReady(true);
+                    });
+                }
+            });
+        };
+        
+        this.deactivate = function(){
+            this.element.style.display = "none";
+            wson.off("jump");
+            wson.off("ready");
+            wson.off("user");
+            wson.off("logout");
+            wson.off("data");
+        };
+
         return this;
     }
 
@@ -165,15 +203,114 @@
         return this;
     }
 
-    var gvd = new GVD();
 
-    // Web Sockets
+    function LoginManager(){
 
+        var el = this.element = document.getElementById("loginContainer");
+        //el.querySelector("#signupButton").onclick = this.signup;
+        el.querySelector("#confirmButton").onclick = this.send;
+        
+        var passInput = el.querySelector("#passInput");
+        var nameInput = el.querySelector("#nameInput");
+
+        var loginHandler = function(){};
+        var logoutHandler = function(){};
+
+        this.onlogin = function(h){
+            loginHandler = h;
+        };
+
+        this.onlogout = function(h){
+            logoutHandler = h;
+        };
+
+        this.send = function(){
+            var hash1 = Sha1.hash(passInput.value);
+            var hash2 = Sha1.hash(hash1 + salt);
+            wson.send("auth", {login: nameInput.value, password: hash2});
+        };
+        
+        this.auth = function(sid){
+            var date = new Date;
+            date.setDate(date.getDate() + 365);
+            document.cookie = "sid=" + sid + "; path=/; expires=" + date.toUTCString();
+            console.log("Success auth");
+
+            var t = this;
+            wson.on("logout", function(){
+                t.logout();
+            });
+            
+            this.deactivate();
+            loginHandler();
+        };
+
+        this.logout = function(){
+            logoutHandler();
+            this.activate();
+        };
+        
+        this.showLoginForm = function(){
+            
+            // TODO: Show login form;
+            
+            var salt = null;
+            wson.request("salt", {}, function(d){
+                salt = d["salt"];
+                console.log("Salt: " + salt);
+            });
+
+            var t = this;
+            wson.on("auth", function(d){
+                if (d.status != "success") {
+                    alert("Неверный логин или пароль");
+                    return;
+                }
+                
+                wson.off("auth");
+                t.auth(d["sid"]);
+            });
+            
+        };
+
+        this.activate = function() {
+            this.element.style.display = "block";
+            // TODO: Don't show login form just now
+            
+            var sid = getCookie("sid");
+
+            if (sid === undefined) {
+                console.log("No SID to send.");
+                this.showLoginForm();
+            } else {
+                var t = this;
+                wson.request("sid", {sid: sid}, function (d) {
+                    if (d["status"] == "accepted") {
+                        console.log("SID accepted!");
+
+                        t.auth(sid);
+                    } else {
+                        console.log("Wrong sid");
+                        t.showLoginForm();
+                    }
+                });
+            }
+        };
+        
+        this.deactivate = function(){
+            this.element.style.display = "none";
+        };
+
+        return this;
+    }
+
+    ///////////////////////////////////////////
+    
     var wson = new WSON("ws://127.0.0.1:8765/");
     
     wson.onopen(function(){
         console.log('Connected');
-        checkSID()
+        window.setTimeout(login.activate, 1000); // TODO: ON DOM LOADED!!!
     });
 
     wson.onclose(function(event) {
@@ -185,82 +322,28 @@
         console.log('Code: ' + event.code + '; reason: ' + event.reason);
     });
 
-    var checkSID = function(){
-        var sid = getCookie("sid");
+    ///////////////////////////////////////////
 
-        if (sid === undefined){
-            console.log("No SID to send.");
-            requestLogin();
-            return;
-        }
+    var gvd = new GVD();
+    var login = new LoginManager();
 
-        wson.request("sid", {sid: sid}, function(d){
-            if (d["status"] == "accepted"){
-                console.log("SID accepted!");
-                loadData();
-            }else{
-                console.log("Wrong sid");
-                requestLogin();
-            }
-        });
-    };
+    login.onlogin(function(){
+        gvd.activate();
+    });
 
-    var requestLogin = function(){
-        
-        function auth(){
-            var hash1 = Sha1.hash(passwordInput.value);
-            var hash2 = Sha1.hash(hash1 + salt);
-            wson.send("auth", {login: nameInput.value, password: hash2});
-        }
-        
-        wson.on("auth", function(d){
-            if (d.status != "success") {
-                alert("Неверный логин или пароль");
-                return;
-            }
-            
-            var date = new Date;
-            date.setDate(date.getDate() + 365);
-            document.cookie = "sid=" + d.sid + "; path=/; expires=" + date.toUTCString();
-            console.log("Success auth");
-            loadData();
-            wson.off("auth");
-        });
-        
-        var salt = null;
-        wson.request("salt", {}, function(d){
-            salt = d["salt"];
-            console.log("Salt: " + salt);
-        });
+    login.onlogout(function(){
+        gvd.activate();
+    });
 
-        var nameInput = makeEl("input", {type: "text", id: "nameInput", value: "Preveter"});
-        var passwordInput = makeEl("input", {type: "password", id: "passwordInput", value: "11111111"});
-
-        var sign = makeEl("input", {type: "button", id: "signupButton", value: "Регистрация"});
-        sign.onclick = signup;
-
-        var confirm = makeEl("input", {type: "button", id: "confirmButton", value: "Войти"});
-        confirm.onclick = auth;
-
-        var loginForm = makeEl("div", {id: "loginForm"});
-        loginForm.appendChild(nameInput);
-        loginForm.appendChild(passwordInput);
-        loginForm.appendChild(confirm);
-        loginForm.appendChild(sign);
-
-        document.body.innerHTML = "";
-        document.body.appendChild(loginForm);
-    };
-
+/*
     var signup = function(){
         
         function sendLogin(){
             wson.request("sign", {login: nameInput.value}, function(d){
-                signupForm.replaceChild(mottoInput, nameInput);
+                // TODO: SHOW SECOND PHASE
                 mottoInput.value = d["motto"];
-                
-                confirm.value = "Test";
-                confirm.onclick = testMotto;
+
+                proceedBtn.onclick = testMotto;
             });
         }
         
@@ -269,7 +352,7 @@
         }
         
         function sendPassword(){
-            wson.request("password", {"password": passInput.value}, requestLogin);
+            wson.request("password", {"password": passInput.value}, showLoginForm);
         }
         
         wson.on("motto", function(d){
@@ -277,85 +360,23 @@
                 alert("Девиз в API еще не обновился. Попробуйте через минутку.");
                 return;
             }
-            
-            signupForm.replaceChild(passInput, mottoInput);
 
-            confirm.onclick = sendPassword;
+            // TODO: SHOW THIRD PHASE
+
+            proceedBtn.onclick = sendPassword;
             wson.off("motto");
         });
-        
-        var nameInput = makeEl("input", {type: "text", id: "nameInput", value: "Preveter"});
-        var passInput = makeEl("input", {type: "text", value: ""});
-        var mottoInput = makeEl("input", {type: "text", onclick: "this.select();"});
-        
-        var confirm = makeEl("input", {type: "button", id: "confirmButton", value: "Ok"});
-        confirm.onclick = sendLogin;
-        
-        var signupForm = makeEl("div", {id: "signupForm"});
-        signupForm.appendChild(nameInput);
-        signupForm.appendChild(confirm);
 
-        document.body.innerHTML = "";
-        document.body.appendChild(signupForm);
+        var signupContainer = document.getElementById("signupContainer");
+
+        var proceedBtn = signupContainer.querySelector("#signupProceed");
+        var nameInput = signupContainer.querySelector("#s_nameInput");
+        var mottoInput = signupContainer.querySelector("#s_mottoInput");
+        var passInput = signupContainer.querySelector("#s_passInput");
+
+        proceedBtn.onclick = sendLogin;
+
+        // TODO: SHOW FIRST PHASE
     };
-
-    var loadData = function(){
-        wson.request("data", {}, function(d){
-            console.log("Data loaded!");
-
-            gvd.reset();
-            gvd.setMyName(d["me"]["name"]);
-            gvd.setMyStatus(d["me"]["ready"]);
-
-            gvd.clearUsers();
-            d["users"].forEach(function(u){
-                var user = new User(u);
-                gvd.addUser(user);
-            });
-
-            if (d["jump"]["active"]){
-                gvd.startTimer(d["jump"]["delay"]);
-                var users = d["jump"]["ready"];
-                users.forEach(function(name){
-                    var u = gvd.getUserByName(name);
-                    u.setReady(true);
-                });
-            }
-
-            document.body.innerHTML = "";
-            document.body.appendChild(gvd.element);
-        });
-
-        wson.on("jump", function(d){
-            gvd.startTimer(d["delay"]);
-            var u = gvd.getUserByName(d["user"]);
-            u.setReady(true);
-            if (d["user"] == gvd.me.name){
-                gvd.setMyStatus(true);
-            }else{
-                alert(d["user"] + " has created a party!");
-            }
-        });
-
-        wson.on("ready", function(d){
-            var u = gvd.getUserByName(d["user"]);
-            u.setReady(true);
-            if (d["user"] == gvd.me.name)
-                gvd.setMyStatus(true);
-        });
-
-        wson.on("user", function(d){
-            if (d["status"] == "on"){
-                var u = new User(d["name"]);
-                gvd.addUser(u);
-            }
-            if (d["status"] == "off"){
-                gvd.removeUser(gvd.getUserByName(d["name"]));
-            }
-        });
-
-        wson.on("logout", function(){
-            requestLogin();
-        })
-    };
+*/
 })();

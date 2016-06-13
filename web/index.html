@@ -1,10 +1,41 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>GVD</title>
-        <script type="text/javascript" src="sha1.js"></script>
-        <script type="text/javascript" src="wson.js"></script>
-        <script type="text/javascript" src="gvd.js"></script>
-    </head>
-    <body></body>
+<head>
+    <meta http-equiv='content-type' content='text/html; charset=utf-8'>
+    <title>GVD</title>
+    <script type="text/javascript" src="sha1.js"></script>
+    <script type="text/javascript" src="wson.js"></script>
+    <script type="text/javascript" src="gvd.js"></script>
+</head>
+<body>
+    <div id="listContainer" style="display:none">
+        <input type="button" id="jumpButton" value="Прыг!">
+        <input type="button" id="exitButton" value="Выход">
+        <div id="timer"></div>
+        <div id="userList"></div>
+    </div>
+
+    <div id="loginContainer" style="display:none">
+        <input type="text" title="login" id="nameInput" value="Preveter">
+        <input type="password" title="password" id="passInput" value="11111111">
+        <input type="button" id="confirmButton" value="Войти">
+        <input type="button" id="signupButton" value="Регистрация">
+    </div>
+
+    <div id="signupContainer" style="display:none">
+        <div id="signupForm1" style="display:none">
+            <label for="s_nameInput">Ваш логин в Годвилле:</label>
+            <input type="text" title="login" id="s_nameInput" value="Preveter">
+        </div>
+        <div id="signupForm2" style="display:none">
+            <label for="s_mottoInput">Вставьте в любое место вашего девиза следующую строку:</label>
+            <input type="text" title="motto" id="s_mottoInput" onclick="this.select();">
+        </div>
+        <div id="signupForm3" style="display:none">
+            <label for="s_passInput">Придумайте и введите пароль:</label>
+            <input type="text" title="password" id="s_passInput" value="">
+        </div>
+        <input type="button" id="signupProceed" value="Далее">
+    </div>
+</body>
 </html>
