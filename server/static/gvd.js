@@ -352,7 +352,7 @@
     
     window.run = function(){
         
-        wson = new WSON("ws://127.0.0.1:8765/");
+        wson = new WSON("ws://127.0.0.1:8083/ws");
 
         gvd = new GVD();
         login = new LoginManager();

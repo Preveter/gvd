@@ -3,13 +3,15 @@ import json
 import random
 import string
 import time
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from models import User, Session
-from SimpleWebSocketServer import SimpleWebSocketServer
 from wson import WSON
+
+from tornado import web, ioloop
 
 MOTTO_LEN = 8
 
@@ -49,7 +51,7 @@ class ActiveUser:
         self.ready = False
 
 
-class GVD(WSON):
+class SocketHandler(WSON):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,12 +68,12 @@ class GVD(WSON):
         self.on("sid", self.continue_session)
         self.on("test_auth", lambda: self.sendMessage(self.auth_name + ": " + str(self.user is not None)))
 
-    def handleConnected(self):
-        print(self.address, 'connected')
+    def open(self):
+        print(self.request.remote_ip, 'connected')
         clients.append(self)
 
-    def handleClose(self):
-        print(self.address, 'closed')
+    def on_close(self):
+        print(self.request.remote_ip, 'closed')
         self.user = None
         check_users()
         clients.remove(self)
@@ -96,7 +98,7 @@ class GVD(WSON):
     def signup_ph1(self, data):
         god_info = get_god_info(data["login"])
         if not god_info:
-            self.send_error("Unknown god name")
+            self.send_error_msg("Unknown god name")
             return
         self.auth_name = god_info['godname']
 
@@ -117,7 +119,7 @@ class GVD(WSON):
 
         god_info = get_god_info(self.auth_name)
         if not god_info:
-            self.send_error("Unknown god name")
+            self.send_error_msg("Unknown god name")
             return
         motto = god_info['motto']
 
@@ -232,5 +234,21 @@ class GVD(WSON):
             self.user.ready = True
 
 
-server = SimpleWebSocketServer('', 8765, GVD)
-server.serveforever()
+class Page(web.RequestHandler):
+    def get(self):
+        self.render("index.html")
+
+
+if __name__ == '__main__':
+    settings = {
+        "static_path": os.path.join(os.path.dirname(__file__), "static"),
+        "debug": True,
+    }
+
+    app = web.Application([
+        (r"/", Page),
+        (r'/ws', SocketHandler),
+        (r"/static/(.*)", web.StaticFileHandler, dict(path=settings['static_path'])),
+    ])
+    app.listen(8083)
+    ioloop.IOLoop.instance().start()
