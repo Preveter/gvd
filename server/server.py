@@ -14,6 +14,8 @@ from wson import WSON
 from tornado import web, ioloop
 
 MOTTO_LEN = 8
+SALT_LEN = 32
+JUMP_DELAY = 300  # = (5 minutes) * 60
 
 
 def rnd_gen(size=8, chars=string.ascii_lowercase + string.digits):
@@ -28,27 +30,65 @@ def get_god_info(name):
     return json.loads(raw.decode("utf-8"))
 
 
-def check_users():
-    global users
-    rm = users[:]
-    for c in clients:
-        if c.user in rm: rm.remove(c.user)
-    for u in rm:
-        for c in clients:
-            c.send("user", {"name": u.name, "status": "off"})
-    users = [item for item in users if item not in rm]
-
-clients = []
-users = []
-jump_time = 0
-jump_delay = 300  # = (5 minutes) * 60
-
-
 class ActiveUser:
-
     def __init__(self, name):
         self.name = name
         self.ready = False
+        self.clients = []
+
+
+class GVD:
+    def __init__(self):
+        self.clients = []
+        self.jump_time = 0
+
+    def add_client(self, cl):
+        self.clients.append(cl)
+
+    def remove_client(self, cl):
+        self.clients.remove(cl)
+
+    def broadcast(self, msg, data):
+        print(">>> BROADCASTING >>>")
+        for c in self.clients:
+            c.send(msg, data)
+        print(">>> END >>>")
+
+    def get_user_by_name(self, name):
+        for c in self.clients:
+            if c.user and c.user.name == name:
+                return c.user
+        return None
+
+    def get_gods_list(self):
+        return list(set([c.user.name for c in self.clients if c.user]))
+
+    def get_jump_info(self):
+        jump = {"active": (self.jump_time - int(time.time())) > 0}
+        if jump["active"]:
+            jump["delay"] = self.jump_time - int(time.time())
+            jump["ready"] = list(set([c.user.name for c in self.clients if c.user and c.user.ready]))
+        return jump
+
+    def init_jump(self, initiator):
+        user = initiator.user
+
+        if int(time.time()) < self.jump_time:
+            # join existing jump
+            if not user.ready:
+                self.broadcast("ready", {"user": user.name})
+                user.ready = True
+        else:
+            # initiate new jump
+            jump_time = int(time.time()) + JUMP_DELAY
+
+            for c in self.clients:
+                c.user.ready = False
+                c.send("jump", {
+                    "delay": jump_time - int(time.time()),
+                    "user": user.name
+                })
+                user.ready = True
 
 
 class SocketHandler(WSON):
@@ -70,24 +110,37 @@ class SocketHandler(WSON):
 
     def open(self):
         print(self.request.remote_ip, 'connected')
-        clients.append(self)
+        self.gvd.add_client(cl=self)
 
     def on_close(self):
         print(self.request.remote_ip, 'closed')
-        self.user = None
-        check_users()
-        clients.remove(self)
+        self.gvd.remove_client(self)
+        self.set_user(None)
+
+    def set_user(self, new_user):
+        old_user = self.user
+
+        if new_user == old_user:
+            return
+
+        self.user = new_user
+
+        if old_user is not None:
+            old_user.clients.remove(self)
+            if len(old_user.clients) == 0:
+                self.gvd.broadcast("user", {"name": old_user.name, "status": "off"})
+
+        if new_user is not None:
+            if len(new_user.clients) == 0:
+                self.gvd.broadcast("user", {"name": new_user.name, "status": "on"})
+            self.user.clients.append(self)
 
     def authorize(self, name):
-        for u in users:
-            if u.name == name:
-                self.user = u
-        if not self.user:
-            u = ActiveUser(name)
-            users.append(u)
-            self.user = u
-            for c in clients:
-                c.send("user", {"name": u.name, "status": "on"})
+        user = self.gvd.get_user_by_name(name)
+        if user is None:
+            self.set_user(ActiveUser(name))
+        else:
+            self.set_user(user)
 
         self.on("data", self.load_data)
         self.on("jump", self.jump)
@@ -143,12 +196,12 @@ class SocketHandler(WSON):
     # AUTH ##########
 
     def get_salt(self, _):
-        if len(self.auth_salt) < 32:
-            self.auth_salt = rnd_gen(32)
+        if len(self.auth_salt) < SALT_LEN:
+            self.auth_salt = rnd_gen(SALT_LEN)
         self.send("salt", {"salt": self.auth_salt})
 
     def auth(self, data):
-        if len(self.auth_salt) < 32:
+        if len(self.auth_salt) < SALT_LEN:
             return
 
         name = data["login"]
@@ -192,8 +245,7 @@ class SocketHandler(WSON):
         except Session.DoesNotExist:
             pass
         self.send("logout", {})
-        self.user = None
-        check_users()
+        self.set_user(None)
         self.off("data")
         self.off("jump")
         self.off("logout")
@@ -201,37 +253,25 @@ class SocketHandler(WSON):
     # WORK ##########
 
     def load_data(self, _):
-        gods = list(set([c.user.name for c in clients if c.user]))
+        gods = self.gvd.get_gods_list()
+        jump = self.gvd.get_jump_info()
         me = {
             "name": self.user.name,
             "ready": self.user.ready
         }
-        jump_info = {"active": (jump_time - int(time.time())) > 0}
-        if jump_info["active"]:
-            jump_info["delay"] = jump_time - int(time.time())
-            jump_info["ready"] = list(set([c.user.name for c in clients if c.user and c.user.ready]))
-        self.send("data", {"users": gods, "me": me, "jump": jump_info})
+        self.send("data", {"users": gods, "me": me, "jump": jump})
 
     def jump(self, _):
-        global jump_time
+        self.gvd.init_jump(self)
 
-        if int(time.time()) < jump_time:  # join
-            if not self.user.ready:
-                for c in clients:
-                    c.send("ready", {
-                        "user": self.user.name
-                    })
-            self.user.ready = True
-        else:  # start new
-            jump_time = int(time.time()) + jump_delay
 
-            for c in clients:
-                c.user.ready = False
-                c.send("jump", {
-                    "delay": jump_time - int(time.time()),
-                    "user": self.user.name
-                })
-            self.user.ready = True
+def sh_factory(gvd):
+    class SocketHandlerEnhanced(SocketHandler):
+        def __init__(self, *args, **kwargs):
+            super(SocketHandlerEnhanced, self).__init__(*args, **kwargs)
+            self.gvd = gvd
+            print("self.gvd: ", self.gvd)
+    return SocketHandlerEnhanced
 
 
 class Page(web.RequestHandler):
@@ -244,10 +284,9 @@ if __name__ == '__main__':
         "static_path": os.path.join(os.path.dirname(__file__), "static"),
         "debug": True,
     }
-
     app = web.Application([
         (r"/", Page),
-        (r'/ws', SocketHandler),
+        (r'/ws', sh_factory(GVD())),
         (r"/static/(.*)", web.StaticFileHandler, dict(path=settings['static_path'])),
     ])
     app.listen(8083)
