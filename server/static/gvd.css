@@ -1,0 +1,78 @@
+html {
+    height: 100%;
+}
+
+body {
+    min-height: 100%;
+    margin: 0;
+    font-family: Verdana, Helvetica, Arial, sans-serif;
+}
+
+#wrap {
+    bottom: 25px;
+    position: absolute;
+    width: 320px;
+    left: 0;
+    -webkit-box-shadow: 0 0 30px #9E9E9E;
+    -moz-box-shadow: 0 0 30px #9E9E9E;
+    box-shadow: 0 0 30px #9E9E9E;
+    background-color: #F6F6F6;
+    border-radius: 1px;
+    z-index: 301;
+    padding: 5px;
+}
+
+#controlsBar {
+    margin: 0 5px 5px;
+}
+
+#exitButton {
+    display: block;
+    float: right;
+}
+
+#exitButton img {
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
+}
+
+#loginContainer {
+
+}
+
+.authForm label {
+    font: 12px arial,sans-serif;
+    display: block;
+    margin: 0.5em 10px;
+    font-weight: 600;
+}
+
+.authForm input[type="text"],.authForm input[type="password"] {
+    font: 17px arial,sans-serif;
+    -moz-border-radius: 5px;
+    -webkit-border-radius: 5px;
+    border-radius: 5px;
+    border: 1px solid #DDDDDD;
+    padding: 5px;
+    width: 310px;
+}
+
+.authForm input[type="button"] {
+    margin: 5px;
+}
+
+.authForm .buttonContainer {
+    text-align: center;
+}
+
+#listContainer #userList .userInfo{
+    padding: 10px;
+    font-size: 14px;
+    background-color: transparent;
+    border-top: 1px solid lightgray;
+}
+
+#listContainer #userList .userInfo.active{
+    background-color: #88ff88;
+}

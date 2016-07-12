@@ -187,8 +187,8 @@
 
         this.draw = function(){
             el.innerHTML = this.name;
-            if (ready) el.style.background = "#88ff88";
-            else el.style.background = "#ffffff";
+            if (ready) el.className = "userInfo active";
+            else el.style.background = "userInfo";
         };
 
         this.draw();
@@ -299,9 +299,8 @@
                     signupForm1.style.display = "none";
                     signupForm2.style.display = "block";
                     mottoInput.value = d["motto"];
-                    return new Promise(resolve => proceedBtn.onclick = resolve)
+                    return testMotto()
                 })
-                .then(() => testMotto())
                 .then(() => {
                     signupForm2.style.display = "none";
                     signupForm3.style.display = "block";
