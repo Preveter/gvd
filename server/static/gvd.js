@@ -1,4 +1,5 @@
 (function(){
+    "use strict";
 
     function getCookie(name){
         var matches = document.cookie.match(new RegExp(
@@ -11,10 +12,8 @@
 
     function GVD(){
         this.users = [];
-        this.me = {
-            name: "",
-            ready: false
-        };
+        this.jumps = [];
+        this.me = null;
 
         var el = this.element = document.getElementById("listContainer");
         
@@ -25,19 +24,7 @@
             wson.send("logout");
         };
 
-        var timer_start = 0,
-            timer_delay = 0;
-        var timer;
-        var timerElement = el.querySelector("#timer");
-        
-
-        this.setMyName = function(name){
-            this.me.name = name;
-        };
-
-        this.setMyStatus = function(val){
-            this.me.ready = val;
-        };
+        // users list handling
 
         this.addUser = function(user){
             this.users.push(user);
@@ -45,10 +32,11 @@
         };
 
         this.removeUser = function(user){
-            var i = this.users.indexOf(user);
+            let i = this.users.indexOf(user);
             if (~i){
                 this.users.splice(i,1);
             }
+            if (user.jump) user.jump.removeMember(user);
             this.redrawUsers();
         };
 
@@ -58,11 +46,14 @@
         };
 
         this.redrawUsers = function(){
-            var lst = el.querySelector("#userList");
-            lst.innerHTML = "";
-            this.users.forEach(function(user){
-                lst.appendChild(user.element);
-            });
+            let element = el.querySelector("#userList");
+            element.innerHTML = "";
+            for (let user of this.users){
+                if (user.jump) continue; // skip users in jump
+                element.appendChild(user.element);
+            }
+            console.log("Users have been drawn");
+            console.log(this.users);
         };
 
         this.getUserByName = function(userName){
@@ -74,87 +65,113 @@
             }
         };
 
-        this.startTimer = function(delay){
-            timer_start = Date.now();
-            timer_delay = delay*1000;
-            timer = setInterval(function(){
-                var now = new Date();
-                if (now > timer_start + timer_delay){
-                    clearInterval(timer);
-                    timerElement ? timerElement.innerHTML = "" : false;
-                    if (gvd.me.ready) alert("ПРЫГ!");
-                }else{
-                    var jt = new Date(timer_start + timer_delay);
-                    var left = parseInt((jt - now)/1000);
-                    var left_str =
-                        ((left-left%60)/60<10?'0':'') + (left-left%60)/60 +
-                        ":" +
-                        (left%60<10?'0':'') + left%60;
-                    timerElement ? timerElement.innerHTML = left_str : false;
-                }
-            },300)
+        // jumps list handling
+
+        this.addJump = function(jump){
+            this.jumps.push(jump);
+            this.redrawJumps();
+        };
+
+        this.removeJump = function(jump){
+            let i = this.jumps.indexOf(jump);
+            if (~i){
+                this.jumps.splice(i,1);
+            }
+            for (let user of this.users){
+                if (user.jump == jump) user.jump = null;
+            }
+            this.redrawJumps();
+            this.redrawUsers();
+        };
+
+        this.clearJumps = function(){
+            this.jumps = [];
+            this.redrawJumps();
+        };
+
+        this.redrawJumps = function(){
+            let element = el.querySelector("#jumpList");
+            element.innerHTML = "";
+            for (let jump of this.jumps){
+                element.appendChild(jump.element);
+            }
+        };
+
+        // something else
+
+        this.jumpAlert = function(){
+            alert("JUMP!!!");
         };
 
         this.reset = function(){
-            this.users = [];
-            this.me = {
-                name: "",
-                ready: false
-            };
+            while (this.jumps.length > 0){
+                let jump = this.jumps.pop();
+                jump.reset();
+            }
 
-            timer_start = 0;
-            timer_delay = 0;
-            
-            clearInterval(timer);
+            this.users = [];
+
+            this.me = null;
         };
         
         this.activate = function(){
             this.element.style.display = "block";
             
-            var t = this;
-            
-            wson.on("jump", function(d){
-                t.startTimer(d["delay"]);
-                var u = t.getUserByName(d["user"]);
-                u.setReady(true);
-                if (d["user"] == t.me.name){
-                    t.setMyStatus(true);
-                }else{
+            wson.on("jump", d => {
+                let user = this.getUserByName(d["user"]);
+
+                let jump = new Jump(d["delay"], user);
+                this.addJump(jump);
+                user.jump = jump;
+
+                if (user != this.me){
                     alert(d["user"] + " has created a party!");
                 }
             });
 
-            wson.on("ready", function(d){
-                var u = t.getUserByName(d["user"]);
-                u.setReady(true);
-                if (d["user"] == t.me.name)
-                    t.setMyStatus(true);
+            wson.on("join", d => {
+                let user = this.getUserByName(d["user"]);
+
+                let member = this.getUserByName(d["member"]);
+                let jump = member.jump;
+
+                user.jump = jump;
+                jump.addMember(user);
             });
 
-            wson.on("user", function(d){
+            wson.on("user", d => {
                 if (d["status"] == "on"){
                     var u = new User(d["name"]);
-                    t.addUser(u);
+                    this.addUser(u);
                 }
                 if (d["status"] == "off"){
-                    t.removeUser(t.getUserByName(d["name"]));
+                    this.removeUser(this.getUserByName(d["name"]));
                 }
             });
             
             wson.fetch("data")
                 .then(d => {
                     console.log("Data loaded!");
-
-                    this.setMyName(d["me"]["name"]);
-                    this.setMyStatus(d["me"]["ready"]);
+                    
+                    this.me = null;
 
                     this.clearUsers();
-                    d["users"].forEach(name => this.addUser(new User(name)));
+                    for (let name of d["users"]){
+                        let user = new User(name);
+                        this.addUser(user);
+                        if (name == d["me"]["name"]) this.me = user;
+                    }
 
-                    if (d["jump"]["active"]){
-                        this.startTimer(d["jump"]["delay"]);
-                        var users = d["jump"]["ready"];
-                        users.forEach(name => this.getUserByName(name).setReady(true));
+                    this.clearJumps();
+                    for (let info of d["jumps"]){
+                        let user = this.getUserByName(info["initiator"]);
+                        let jump = new Jump(info["delay"], user);
+                        this.addJump(jump);
+                        for (let name of info["members"]){
+                            let member = this.getUserByName(name);
+                            member.jump = jump;
+                            jump.addMember(member);
+                        }
                     }
                 });
         };
@@ -172,26 +189,109 @@
 
     function User(name){
         this.name = name;
-        var ready = false;
+        this.jump = null;
 
         var el = this.element = document.createElement("div");
         el.className = "userInfo";
-        el.id = "name";
-
-        this.setReady = function(val){
-            if (ready != val){
-                ready = val;
-                this.draw();
-            }
-        };
+        el.id = name;
 
         this.draw = function(){
             el.innerHTML = this.name;
-            if (ready) el.className = "userInfo active";
-            else el.style.background = "userInfo";
         };
 
         this.draw();
+        return this;
+    }
+
+    function Jump(delay, initiator){
+        this.delay = delay;
+        this.initiator = initiator;
+
+        let members = [this.initiator];
+
+        var timer;
+
+        var el = this.element = document.createElement("div");
+        el.className = "jumpBlock";
+
+        var timerElement = document.createElement("div");
+        timerElement.className = "timer";
+        el.appendChild(timerElement);
+        var infoElement = document.createElement("div");
+        infoElement.className = "info";
+        el.appendChild(infoElement);
+
+        var joinBtn = document.createElement("button");
+        joinBtn.className = "joinBtn";
+        joinBtn.innerHTML = "Присоединиться";
+        el.appendChild(joinBtn);
+
+        var membersList = document.createElement("div");
+        membersList.className = "membersList";
+        el.appendChild(membersList);
+        joinBtn.onclick = () => {
+            this.join();
+        };
+
+        this.startTimer = function(){
+            let timer_start = Date.now();
+            let timer_delay = this.delay*1000;
+            timer = setInterval(() => {
+                var now = new Date();
+                if (now > timer_start + timer_delay){
+                    clearInterval(timer);
+                    timerElement ? timerElement.innerHTML = "" : false;
+                    if (~members.indexOf(gvd.me)) gvd.jumpAlert();
+                    gvd.removeJump(this);
+                }else{
+                    var jt = new Date(timer_start + timer_delay);
+                    var left = parseInt((jt - now)/1000);
+                    var left_str =
+                        ((left-left%60)/60<10?'0':'') + (left-left%60)/60 +
+                        ":" +
+                        (left%60<10?'0':'') + left%60;
+                    timerElement ? timerElement.innerHTML = left_str : false;
+                }
+            },300)
+        };
+
+        this.addMember = function(member){
+            members.push(member);
+            this.redrawMembers();
+        };
+
+        this.removeMember = function(member){
+            let i = members.indexOf(member);
+            if (~i){
+                members.splice(i,1);
+            }
+            this.redrawMembers();
+        };
+
+        this.redrawMembers = function(){
+            membersList.innerHTML = "";
+            for (let user of members){
+                membersList.appendChild(user.element)
+            }
+        };
+
+        this.join = function(){
+            wson.send("join", {member: this.initiator.name});
+        };
+
+        this.draw = function(){
+            timerElement.innerHTML = this.delay;
+            infoElement.innerHTML = this.initiator.name;
+
+            this.redrawMembers();
+        };
+
+        this.reset = function(){
+            clearInterval(timer);
+        };
+
+        this.draw();
+        this.startTimer();
         return this;
     }
 

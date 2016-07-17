@@ -66,13 +66,39 @@ body {
     text-align: center;
 }
 
-#listContainer #userList .userInfo{
+#listContainer #userList .userInfo {
     padding: 10px;
     font-size: 14px;
     background-color: transparent;
     border-top: 1px solid lightgray;
 }
 
-#listContainer #userList .userInfo.active{
+.jumpBlock {
     background-color: #88ff88;
+}
+
+.jumpBlock>div {
+    padding: 5px;
+}
+
+.jumpBlock .timer {
+    float: left;
+    box-sizing: border-box;
+    height: 30px;
+}
+
+.jumpBlock .timer:before {  content: "[";  }
+.jumpBlock .timer:after {  content: "]";  }
+
+.jumpBlock .info {
+    font-style: italic;
+    float: left;
+    box-sizing: border-box;
+    height: 30px;
+}
+
+.jumpBlock .joinBtn {
+    box-sizing: border-box;
+    height: 22px;
+    margin: 4px;
 }

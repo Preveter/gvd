@@ -37,10 +37,21 @@ class ActiveUser:
         self.clients = []
 
 
+class Jump:
+    def __init__(self, initiator, delay=JUMP_DELAY):
+        self.time = int(time.time()) + delay
+        self.users = [initiator]
+        self.initiator = initiator
+
+    def add_user(self, user):
+        self.users.append(user)
+
+
 class GVD:
     def __init__(self):
         self.clients = []
-        self.jump_time = 0
+        self.jumps = []
+        self.users = []
 
     def add_client(self, cl):
         self.clients.append(cl)
@@ -55,40 +66,76 @@ class GVD:
         print(">>> END >>>")
 
     def get_user_by_name(self, name):
+        """
+        :param name:
+        :return: User object or None if user doesn't exist
+        :rtype: ActiveUser
+        """
         for c in self.clients:
             if c.user and c.user.name == name:
                 return c.user
         return None
 
+    def get_jump_by_member(self, user):
+        """
+        :param user:
+        :return: Jump object or None if jump with given member doesn't exist
+        :rtype: Jump
+        """
+        for j in self.jumps:
+            if user in j.users:
+                return j
+        return None
+
     def get_gods_list(self):
         return list(set([c.user.name for c in self.clients if c.user]))
 
-    def get_jump_info(self):
-        jump = {"active": (self.jump_time - int(time.time())) > 0}
-        if jump["active"]:
-            jump["delay"] = self.jump_time - int(time.time())
-            jump["ready"] = list(set([c.user.name for c in self.clients if c.user and c.user.ready]))
-        return jump
+    def get_jumps_info(self):
+        # first delete old jumps
+        now = int(time.time())
+        self.jumps = [jump for jump in self.jumps if jump.time - now > 0]
+
+        info = []
+        for jump in self.jumps:
+            names = []
+            for user in jump.users:
+                names.append(user.name)
+            info.append({
+                "delay": jump.time - now,
+                "members": names,
+                "initiator": jump.initiator.name,
+            })
+        return info
 
     def init_jump(self, initiator):
         user = initiator.user
+        if user is None or user.ready:
+            initiator.send_error_msg("You can't create group now")
+            return
 
-        if int(time.time()) < self.jump_time:
-            # join existing jump
-            if not user.ready:
-                self.broadcast("ready", {"user": user.name})
-                user.ready = True
-        else:
-            # initiate new jump
-            jump_time = int(time.time()) + JUMP_DELAY
+        user.ready = True
+        jump = Jump(user)
+        self.jumps.append(jump)
+        self.broadcast("jump", {
+            "delay": jump.time - int(time.time()),
+            "user": user.name
+        })
 
-            for c in self.clients:
-                c.user.ready = False
-                c.send("jump", {
-                    "delay": jump_time - int(time.time()),
-                    "user": user.name
-                })
-                user.ready = True
+    def join_jump(self, client, member_name):
+        user = client.user
+        if user is None or user.ready:
+            client.send_error_msg("You can't join group now")
+            return
+
+        member = self.get_user_by_name(member_name)
+        jump = self.get_jump_by_member(member)
+        if jump is None:
+            client.send_error_msg("Group you are trying to join does not exist")
+            return
+
+        user.ready = True
+        jump.add_user(user)
+        self.broadcast("join", {"user": user.name, "member": member.name})
 
 
 class SocketHandler(WSON):
@@ -110,7 +157,7 @@ class SocketHandler(WSON):
 
     def open(self):
         print(self.request.remote_ip, 'connected')
-        self.gvd.add_client(cl=self)
+        self.gvd.add_client(self)
 
     def on_close(self):
         print(self.request.remote_ip, 'closed')
@@ -144,6 +191,7 @@ class SocketHandler(WSON):
 
         self.on("data", self.load_data)
         self.on("jump", self.jump)
+        self.on("join", self.join)
         self.on("logout", self.close_session)
 
     # SIGN UP ##########
@@ -248,21 +296,26 @@ class SocketHandler(WSON):
         self.set_user(None)
         self.off("data")
         self.off("jump")
+        self.off("join")
         self.off("logout")
 
     # WORK ##########
 
     def load_data(self, _):
         gods = self.gvd.get_gods_list()
-        jump = self.gvd.get_jump_info()
+        jumps = self.gvd.get_jumps_info()
         me = {
             "name": self.user.name,
             "ready": self.user.ready
         }
-        self.send("data", {"users": gods, "me": me, "jump": jump})
+        self.send("data", {"users": gods, "me": me, "jumps": jumps})
 
     def jump(self, _):
         self.gvd.init_jump(self)
+
+    def join(self, data):
+        name = data["member"]
+        self.gvd.join_jump(self, name)
 
 
 def sh_factory(gvd):
@@ -270,7 +323,6 @@ def sh_factory(gvd):
         def __init__(self, *args, **kwargs):
             super(SocketHandlerEnhanced, self).__init__(*args, **kwargs)
             self.gvd = gvd
-            print("self.gvd: ", self.gvd)
     return SocketHandlerEnhanced
 
 
