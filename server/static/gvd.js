@@ -49,20 +49,21 @@
             let element = el.querySelector("#userList");
             element.innerHTML = "";
             for (let user of this.users){
-                if (user.jump) continue; // skip users in jump
+                if (user.jump || user.online == false) continue; // skip users in jump and offline
                 element.appendChild(user.element);
             }
-            console.log("Users have been drawn");
-            console.log(this.users);
+            for (let jump of this.jumps){
+                jump.redrawMembers();
+            }
         };
 
         this.getUserByName = function(userName){
-            for (var i = 0; i < this.users.length; i++){
-                var u = this.users[i];
+            for (let u of this.users){
                 if (u.name == userName){
                     return u;
                 }
             }
+            return null;
         };
 
         // jumps list handling
@@ -140,13 +141,21 @@
             });
 
             wson.on("user", d => {
+                let user = this.getUserByName(d["name"]);
                 if (d["status"] == "on"){
-                    var u = new User(d["name"]);
-                    this.addUser(u);
+                    if (user == null){
+                        user = new User(d["name"], true);
+                        this.addUser(user);
+                    }else{
+                        user.online = true;
+                    }
                 }
                 if (d["status"] == "off"){
-                    this.removeUser(this.getUserByName(d["name"]));
+                    if (user != null){
+                        user.online = false;
+                    }
                 }
+                this.redrawUsers();
             });
             
             wson.fetch("data")
@@ -156,8 +165,8 @@
                     this.me = null;
 
                     this.clearUsers();
-                    for (let name of d["users"]){
-                        let user = new User(name);
+                    for (let info of d["users"]){
+                        let user = new User(info["name"], info["online"]);
                         this.addUser(user);
                         if (name == d["me"]["name"]) this.me = user;
                     }
@@ -173,6 +182,8 @@
                             jump.addMember(member);
                         }
                     }
+
+                    this.redrawUsers();
                 });
         };
         
@@ -187,9 +198,10 @@
         return this;
     }
 
-    function User(name){
+    function User(name, online = true){
         this.name = name;
         this.jump = null;
+        this.online = online;
 
         var el = this.element = document.createElement("div");
         el.className = "userInfo";
@@ -271,6 +283,7 @@
         this.redrawMembers = function(){
             membersList.innerHTML = "";
             for (let user of members){
+                if (!user.online) continue;
                 membersList.appendChild(user.element)
             }
         };
@@ -470,7 +483,7 @@
         });
     
         wson.onclose(function(event) {
-            if (event.wasClean){
+            if (event["wasClean"]){
                 console.log('Connection closed');
             }else{
                 console.log('Connection lost');

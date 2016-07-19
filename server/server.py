@@ -33,7 +33,7 @@ def get_god_info(name):
 class ActiveUser:
     def __init__(self, name):
         self.name = name
-        self.ready = False
+        self.online = True
         self.clients = []
 
 
@@ -54,12 +54,30 @@ class GVD:
         self.users = []
 
     def add_client(self, cl):
+        """
+        Add websocket handler to client list
+        :param cl: Tornado websocket handler to add
+        """
         self.clients.append(cl)
 
     def remove_client(self, cl):
+        """
+        Remove client from list
+        :param cl: Tornado websocket handler to remove
+        """
         self.clients.remove(cl)
+        for u in self.users:
+            if cl in u.clients:
+                u.clients.remove(cl)
+            if len(u.clients) == 0:
+                self.broadcast("user", {"name": u.name, "status": "off"})  # TODO: Think what to do with it
 
-    def broadcast(self, msg, data):
+    def broadcast(self, msg, data):  # TODO: Think, do i really need it here
+        """
+        Send message to all clients
+        :param msg:
+        :param data:
+        """
         print(">>> BROADCASTING >>>")
         for c in self.clients:
             c.send(msg, data)
@@ -67,14 +85,70 @@ class GVD:
 
     def get_user_by_name(self, name):
         """
-        :param name:
+        Find user object by username
+        :param name: Username
         :return: User object or None if user doesn't exist
         :rtype: ActiveUser
         """
-        for c in self.clients:
-            if c.user and c.user.name == name:
-                return c.user
+        for u in self.users:
+            if u.name == name:
+                return u
         return None
+
+    def get_client_user(self, client):
+        """
+        Get user object bound with given client
+        :param client: Tornado websocket handler
+        :return: User object for given client
+        :rtype: ActiveUser
+        """
+        for u in self.users:
+            if client in u.clients:
+                return u
+        return None
+
+    def login(self, client, name):
+        """
+        Authenticate client as registered user
+        :param client: Tornado websocket handler
+        :param name: Username
+        """
+        user = self.get_user_by_name(name)
+        if user is None:
+            user = ActiveUser(name)
+            self.users.append(user)
+        self.set_client_user(client, user)
+
+    def logout(self, client):
+        """
+        Deauthenticate user
+        :param client: Tornado websocket handler
+        """
+        self.set_client_user(client, None)
+
+    def set_client_user(self, client, new_user):
+        """
+        Bind client to user object
+        :param client: Tornado websocket handler
+        :param new_user: User object or None
+        """
+        old_user = self.get_client_user(client)
+
+        if not (new_user is None or old_user is None):  # If one of the users is None, no need to check equality
+            if new_user == old_user:  # Check equality to prevent rapid off-on blinking
+                return
+
+        if old_user is not None:
+            old_user.clients.remove(client)
+            if len(old_user.clients) == 0:
+                old_user.online = False
+                self.broadcast("user", {"name": old_user.name, "status": "off"})  # TODO: Think what to do with it
+
+        if new_user is not None:
+            if len(new_user.clients) == 0:
+                new_user.online = True
+                self.broadcast("user", {"name": new_user.name, "status": "on"})  # TODO: Think what to do with it
+            new_user.clients.append(client)
 
     def get_jump_by_member(self, user):
         """
@@ -88,7 +162,13 @@ class GVD:
         return None
 
     def get_gods_list(self):
-        return list(set([c.user.name for c in self.clients if c.user]))
+        info = []
+        for user in self.users:
+            info.append({
+                "name": user.name,
+                "online": user.online,
+            })
+        return info
 
     def get_jumps_info(self):
         # first delete old jumps
@@ -108,12 +188,11 @@ class GVD:
         return info
 
     def init_jump(self, initiator):
-        user = initiator.user
-        if user is None or user.ready:
+        user = self.get_client_user(initiator)
+        if (user is None) or (self.get_jump_by_member(user) is not None):
             initiator.send_error_msg("You can't create group now")
             return
 
-        user.ready = True
         jump = Jump(user)
         self.jumps.append(jump)
         self.broadcast("jump", {
@@ -122,8 +201,8 @@ class GVD:
         })
 
     def join_jump(self, client, member_name):
-        user = client.user
-        if user is None or user.ready:
+        user = self.get_client_user(client)
+        if (user is None) or (self.get_jump_by_member(user) is not None):
             client.send_error_msg("You can't join group now")
             return
 
@@ -133,7 +212,6 @@ class GVD:
             client.send_error_msg("Group you are trying to join does not exist")
             return
 
-        user.ready = True
         jump.add_user(user)
         self.broadcast("join", {"user": user.name, "member": member.name})
 
@@ -147,13 +225,20 @@ class SocketHandler(WSON):
         self.auth_salt = ""
         self.auth_sid = ""
 
-        self.user = None
+        self.auth_status = False
 
-        self.on("sign", self.signup_ph1)
         self.on("salt", self.get_salt)
         self.on("auth", self.auth)
+
+        self.on("sign", self.signup_start)
+        self.on("motto", self.signup_test)
+
         self.on("sid", self.continue_session)
-        self.on("test_auth", lambda: self.sendMessage(self.auth_name + ": " + str(self.user is not None)))
+
+        self.on("data", self.load_data)
+        self.on("jump", self.jump)
+        self.on("join", self.join)
+        self.on("logout", self.close_session)
 
     def open(self):
         print(self.request.remote_ip, 'connected')
@@ -162,41 +247,10 @@ class SocketHandler(WSON):
     def on_close(self):
         print(self.request.remote_ip, 'closed')
         self.gvd.remove_client(self)
-        self.set_user(None)
-
-    def set_user(self, new_user):
-        old_user = self.user
-
-        if new_user == old_user:
-            return
-
-        self.user = new_user
-
-        if old_user is not None:
-            old_user.clients.remove(self)
-            if len(old_user.clients) == 0:
-                self.gvd.broadcast("user", {"name": old_user.name, "status": "off"})
-
-        if new_user is not None:
-            if len(new_user.clients) == 0:
-                self.gvd.broadcast("user", {"name": new_user.name, "status": "on"})
-            self.user.clients.append(self)
-
-    def authorize(self, name):
-        user = self.gvd.get_user_by_name(name)
-        if user is None:
-            self.set_user(ActiveUser(name))
-        else:
-            self.set_user(user)
-
-        self.on("data", self.load_data)
-        self.on("jump", self.jump)
-        self.on("join", self.join)
-        self.on("logout", self.close_session)
 
     # SIGN UP ##########
 
-    def signup_ph1(self, data):
+    def signup_start(self, data):
         god_info = get_god_info(data["login"])
         if not god_info:
             self.send_error_msg("Unknown god name")
@@ -211,27 +265,30 @@ class SocketHandler(WSON):
             motto = user.motto_login
         user.save()
 
-        self.on("motto", self.signup_ph2)
         self.send("sign", {"motto": motto})
 
-    def signup_ph2(self, _):
+    def signup_test(self, _):
         user = User.get(god_name=self.auth_name)
+
+        if user.motto_login is None or len(user.motto_login) < MOTTO_LEN:
+            self.send_error_msg("Sign up sequence violation")
+            return
+
         req_motto = user.motto_login
 
         god_info = get_god_info(self.auth_name)
         if not god_info:
-            self.send_error_msg("Unknown god name")
+            self.send_error_msg("Unknown god name. SURPRISE!")
             return
         motto = god_info['motto']
 
         if motto.find(req_motto) == -1:
             self.send("motto", {"status": "declined"})
         else:
-            self.off("motto")
-            self.on("password", self.signup_ph3)
+            self.on("password", self.signup_password)
             self.send("motto", {"status": "accepted"})
 
-    def signup_ph3(self, data):
+    def signup_password(self, data):
         password = data["password"]
         user = User.get(god_name=self.auth_name)
         user.password = hashlib.sha1(password.encode()).hexdigest()
@@ -241,7 +298,7 @@ class SocketHandler(WSON):
         self.off("password")
         self.send("password", {"status": "changed"})
 
-    # AUTH ##########
+    # AUTHENTICATION #####
 
     def get_salt(self, _):
         if len(self.auth_salt) < SALT_LEN:
@@ -272,7 +329,9 @@ class SocketHandler(WSON):
         s = Session.create(sid=self.auth_sid, god=name)
         s.save()
 
-        self.authorize(name)
+        self.gvd.login(self, name)
+        self.auth_status = True
+
         self.send("auth", {"status": "success", "sid": self.auth_sid})
 
     def continue_session(self, data):
@@ -283,8 +342,13 @@ class SocketHandler(WSON):
             return
 
         self.auth_sid = s.sid
-        self.authorize(s.god.god_name)
+        self.gvd.login(self, s.god.god_name)
+
+        self.auth_status = True
+
         self.send("sid", {"status": "accepted"})
+
+    # WORK ##########
 
     def close_session(self, _):
         try:
@@ -293,27 +357,39 @@ class SocketHandler(WSON):
         except Session.DoesNotExist:
             pass
         self.send("logout", {})
-        self.set_user(None)
-        self.off("data")
-        self.off("jump")
-        self.off("join")
-        self.off("logout")
-
-    # WORK ##########
+        self.gvd.logout(self)
+        self.auth_status = False
 
     def load_data(self, _):
+        if not self.auth_status:
+            self.send_error_msg("Unauthorized")
+            return
+
         gods = self.gvd.get_gods_list()
         jumps = self.gvd.get_jumps_info()
-        me = {
-            "name": self.user.name,
-            "ready": self.user.ready
-        }
-        self.send("data", {"users": gods, "me": me, "jumps": jumps})
+
+        me = self.gvd.get_client_user(self)
+
+        self.send("data", {
+            "users": gods,
+            "jumps": jumps,
+            "me": {
+                "name": me.name
+            },
+        })
 
     def jump(self, _):
+        if not self.auth_status:
+            self.send_error_msg("Unauthorized")
+            return
+
         self.gvd.init_jump(self)
 
     def join(self, data):
+        if not self.auth_status:
+            self.send_error_msg("Unauthorized")
+            return
+
         name = data["member"]
         self.gvd.join_jump(self, name)
 
