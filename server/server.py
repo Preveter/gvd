@@ -11,11 +11,11 @@ import urllib.request
 from models import User, Session
 from wson import WSON
 
-from tornado import web, ioloop
+from tornado import web, ioloop, gen
 
 MOTTO_LEN = 8
 SALT_LEN = 32
-JUMP_DELAY = 300  # = (5 minutes) * 60
+JUMP_DELAY = 60  # = (1 minute) * 60
 
 
 def rnd_gen(size=8, chars=string.ascii_lowercase + string.digits):
@@ -171,10 +171,6 @@ class GVD:
         return info
 
     def get_jumps_info(self):
-        # first delete old jumps
-        now = int(time.time())
-        self.jumps = [jump for jump in self.jumps if jump.time - now > 0]
-
         info = []
         for jump in self.jumps:
             names = []
@@ -187,6 +183,7 @@ class GVD:
             })
         return info
 
+    @gen.coroutine
     def init_jump(self, initiator):
         user = self.get_client_user(initiator)
         if (user is None) or (self.get_jump_by_member(user) is not None):
@@ -199,6 +196,9 @@ class GVD:
             "delay": jump.time - int(time.time()),
             "user": user.name
         })
+
+        yield gen.sleep(jump.time - int(time.time()) + 1)
+        self.jumps.remove(jump)
 
     def join_jump(self, client, member_name):
         user = self.get_client_user(client)
