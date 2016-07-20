@@ -1,6 +1,6 @@
 import peewee
 
-db = peewee.SqliteDatabase("gvd.db")
+db = peewee.SqliteDatabase("db/gvd.db")
 db.connect()
 
 

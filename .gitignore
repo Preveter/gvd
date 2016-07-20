@@ -1,4 +1,4 @@
 /**/__pycache__
 *.pyc
 /.idea
-/server/gvd.db
+/server/db/gvd.db
