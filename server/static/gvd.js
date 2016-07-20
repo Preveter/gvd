@@ -1,6 +1,9 @@
 (function(){
     "use strict";
 
+    const WS_ADDR = "ws://127.0.0.1:8083/ws";
+
+
     function getCookie(name){
         var matches = document.cookie.match(new RegExp(
             "(?:^|; )" + name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, '\\$1') + "=([^;]*)"
@@ -23,6 +26,21 @@
         el.querySelector("#exitButton").onclick = function(){
             wson.send("logout");
         };
+
+        let notifications = false;
+        if ("Notification" in window)
+            switch ( Notification.permission.toLowerCase() ) {
+                case "granted":
+                    notifications = true;
+                    break;
+                case "denied":
+                    break;
+                case "default":
+                    Notification.requestPermission(permission => {
+                        notifications = (permission == "granted");
+                        if (notifications) new Notification("Проверка");
+                    });
+            }
 
         // users list handling
 
@@ -101,7 +119,23 @@
         // something else
 
         this.jumpAlert = function(){
-            alert("JUMP!!!");
+            let sound = new Audio("/static/sounds/jump.mp3");
+            sound.volume = 0.2;
+            sound.play();
+            if (notifications){
+                try {
+                    let n = new Notification("GodvilleDungeon", {
+                        tag: "gvd_jump",
+                        body: "Пора прагыть в подземелье!"
+                    });
+                    n.onclick = () => {
+                        try { window.focus(); }
+                        catch (ex) {}
+                    };
+                }catch (ex) {
+                    console.log("Exception " + ex.name + ": " + ex.message);
+                }
+            }
         };
 
         this.reset = function(){
@@ -126,7 +160,19 @@
                 user.jump = jump;
 
                 if (user != this.me){
-                    alert(d["user"] + " has created a party!");
+                    let sound = new Audio("/static/sounds/invite.mp3");
+                    sound.volume = 0.2;
+                    sound.play();
+                    if (notifications){
+                        let n = new Notification("GodvilleDungeon", {
+                            tag: "gvd_party",
+                            body: d["user"] + " собирает команду!"
+                        });
+                        n.onclick = () => {
+                            try { window.focus(); }
+                            catch (ex) {}
+                        };
+                    }
                 }
             });
 
@@ -168,7 +214,7 @@
                     for (let info of d["users"]){
                         let user = new User(info["name"], info["online"]);
                         this.addUser(user);
-                        if (name == d["me"]["name"]) this.me = user;
+                        if (info["name"] == d["me"]["name"]) this.me = user;
                     }
 
                     this.clearJumps();
@@ -463,8 +509,8 @@
     var wson, gvd, login;
     
     window.run = function(){
-        
-        wson = new WSON("ws://127.0.0.1:8083/ws");
+
+        wson = new WSON(WS_ADDR);
 
         gvd = new GVD();
         login = new LoginManager();
