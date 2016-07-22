@@ -1,7 +1,7 @@
 (function(){
     "use strict";
 
-    const WS_ADDR = "ws://127.0.0.1:8083/ws";
+    const WS_ADDR = "wss://polik94.ddns.net/gvd/ws";
 
 
     function getCookie(name){
@@ -38,7 +38,9 @@
                 case "default":
                     Notification.requestPermission(permission => {
                         notifications = (permission == "granted");
-                        if (notifications) new Notification("Проверка");
+                        if (notifications){
+                            notify("Проверка");
+                        }
                     });
             }
 
@@ -119,22 +121,15 @@
         // something else
 
         this.jumpAlert = function(){
-            let sound = new Audio("/static/sounds/jump.mp3");
+            let sound = new Audio("static/sounds/jump.mp3");
             sound.volume = 0.2;
             sound.play();
+
             if (notifications){
-                try {
-                    let n = new Notification("GodvilleDungeon", {
-                        tag: "gvd_jump",
-                        body: "Пора прагыть в подземелье!"
-                    });
-                    n.onclick = () => {
-                        try { window.focus(); }
-                        catch (ex) {}
-                    };
-                }catch (ex) {
-                    console.log("Exception " + ex.name + ": " + ex.message);
-                }
+                notify("GodvilleDungeon", {
+                    tag: "gvd_jump",
+                    body: "Пора прагыть в подземелье!"
+                });
             }
         };
 
@@ -160,18 +155,13 @@
                 user.jump = jump;
 
                 if (user != this.me){
-                    let sound = new Audio("/static/sounds/invite.mp3");
+                    let sound = new Audio("static/sounds/invite.mp3");
                     sound.volume = 0.2;
-                    sound.play();
-                    if (notifications){
-                        let n = new Notification("GodvilleDungeon", {
+                    sound.play();if (notifications){
+                        notify("GodvilleDungeon", {
                             tag: "gvd_party",
                             body: d["user"] + " собирает команду!"
                         });
-                        n.onclick = () => {
-                            try { window.focus(); }
-                            catch (ex) {}
-                        };
                     }
                 }
             });
@@ -508,35 +498,34 @@
 
     var wson, gvd, login;
     
-    window.run = function(){
+    window.GVD_run = function(){
 
         wson = new WSON(WS_ADDR);
 
         gvd = new GVD();
         login = new LoginManager();
 
-        login.onlogin(function(){
+        login.onlogin(function () {
             gvd.activate();
         });
 
-        login.onlogout(function(){
+        login.onlogout(function () {
             gvd.deactivate();
         });
 
-        wson.onopen(function(){
+        wson.onopen(function () {
             console.log('Connected');
             login.activate();
         });
-    
-        wson.onclose(function(event) {
-            if (event["wasClean"]){
+
+        wson.onclose(function (event) {
+            if (event["wasClean"]) {
                 console.log('Connection closed');
-            }else{
+            } else {
                 console.log('Connection lost');
             }
             console.log('Code: ' + event.code + '; reason: ' + event.reason);
         });
-
     };
 
 })();

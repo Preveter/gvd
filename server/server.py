@@ -1,22 +1,24 @@
 #!/usr/bin/python3
 import hashlib
 import json
+import os
 import random
 import string
 import time
-import os
 import urllib.error
 import urllib.parse
 import urllib.request
 
-from models import User, Session
+from tornado import web, ioloop, gen
 from wson import WSON
 
-from tornado import web, ioloop, gen
+from models import User, Session
 
 MOTTO_LEN = 8
 SALT_LEN = 32
 JUMP_DELAY = 60  # = (1 minute) * 60
+
+WEB_PATH = os.path.join(os.path.dirname(__file__), "..", "web")
 
 
 def rnd_gen(size=8, chars=string.ascii_lowercase + string.digits):
@@ -178,7 +180,7 @@ class GVD:
             for user in jump.users:
                 names.append(user.name)
             info.append({
-                "delay": jump.time - now,
+                "delay": jump.time - int(time.time()),
                 "members": names,
                 "initiator": jump.initiator.name,
             })
@@ -198,7 +200,7 @@ class GVD:
             "user": user.name
         })
 
-        yield gen.sleep(jump.time - int(time.time()) + 1)
+        yield gen.sleep(jump.time - int(time.time()))
         self.jumps.remove(jump)
 
     def join_jump(self, client, member_name):
@@ -405,12 +407,13 @@ def sh_factory(gvd):
 
 class Page(web.RequestHandler):
     def get(self):
-        self.render("index.html")
+        self.render(os.path.join(WEB_PATH, "index.html"))
 
 
 if __name__ == '__main__':
+    print(os.path.join(WEB_PATH, "static"))
     settings = {
-        "static_path": os.path.join(os.path.dirname(__file__), "static"),
+        "static_path": os.path.join(WEB_PATH, "static"),
         "debug": True,
     }
     app = web.Application([

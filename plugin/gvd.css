@@ -10,7 +10,7 @@ body {
 
 #wrap {
     bottom: 25px;
-    position: absolute;
+    position: fixed;
     width: 320px;
     left: 0;
     -webkit-box-shadow: 0 0 30px #9E9E9E;
