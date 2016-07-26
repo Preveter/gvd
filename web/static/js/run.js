@@ -46,6 +46,25 @@
     wrap.id = "wrap";
     wrap.innerHTML = content;
     document.body.appendChild(wrap);
+
+    let container = document.getElementsByClassName("msgDockWrapper")[0];
+    if (typeof container != "undefined"){
+
+        let btn = document.createElement("div");
+        btn.id = "gvdButton";
+        btn.className = "msgDock";
+        btn.innerHTML = "GVD";
+
+        btn.onclick = () => {
+            if (wrap.style.display != "none") wrap.style.display = "none";
+            else wrap.style.display = "block";
+        };
+
+        wrap.style.display = "none";
+        // TODO: Do not hide if login is needed
+        
+        container.appendChild(btn);
+    }
     
     window.GVD_run();
 })();

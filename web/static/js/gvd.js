@@ -353,6 +353,12 @@
         var passInput = loginForm.querySelector("#passInput");
         var nameInput = loginForm.querySelector("#nameInput");
 
+        loginForm.onkeydown = (e => {
+            if(e.keyCode==13)
+                this.element.querySelector("#confirmButton").click();
+        });
+        nameInput.focus();
+
         var loginHandler = function(){};
         var logoutHandler = function(){};
 
@@ -421,6 +427,11 @@
             let signupForm3 = signupContainer.querySelector("#signupForm3");
             let passInput = signupContainer.querySelector("#s_passInput");
 
+            signupContainer.onkeydown = (e => {
+                if(e.keyCode==13)
+                    proceedBtn.click();
+            });
+
             let testMotto = function(){
                 return new Promise(resolve => {
                     proceedBtn.onclick = () => {
@@ -441,6 +452,7 @@
                     loginForm.style.display = "none";
                     signupContainer.style.display = "block";
                     signupForm1.style.display = "block";
+                    nameInput.focus();
                     return new Promise(resolve => proceedBtn.onclick = resolve)
                 })
                 .then(() => wson.fetch("sign", {login: nameInput.value}))
@@ -448,11 +460,13 @@
                     signupForm1.style.display = "none";
                     signupForm2.style.display = "block";
                     mottoInput.value = d["motto"];
+                    mottoInput.focus();
                     return testMotto()
                 })
                 .then(() => {
                     signupForm2.style.display = "none";
                     signupForm3.style.display = "block";
+                    passInput.focus();
                     return new Promise(resolve => proceedBtn.onclick = resolve)
                 })
                 .then(() => wson.fetch("password", {"password": passInput.value}))
@@ -460,6 +474,9 @@
                     signupForm3.style.display = "none";
                     signupContainer.style.display = "none";
                     this.showLoginForm();
+                })
+                .catch(() => {
+                    this.signup();
                 });
 
         };

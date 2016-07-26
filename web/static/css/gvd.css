@@ -1,5 +1,5 @@
 html {
-    height: 100%;
+    min-height: 100%;
 }
 
 body {
@@ -9,17 +9,13 @@ body {
 }
 
 #wrap {
-    bottom: 25px;
-    position: fixed;
     width: 320px;
-    left: 0;
-    -webkit-box-shadow: 0 0 30px #9E9E9E;
-    -moz-box-shadow: 0 0 30px #9E9E9E;
-    box-shadow: 0 0 30px #9E9E9E;
+    margin-top: 20px;
+    margin-left: auto;
+    margin-right: auto;
     background-color: #F6F6F6;
-    border-radius: 1px;
-    z-index: 301;
     padding: 5px;
+    border: 1px solid gray;
 }
 
 #controlsBar {

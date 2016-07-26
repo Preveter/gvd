@@ -8,11 +8,20 @@ body {
     font-family: Verdana, Helvetica, Arial, sans-serif;
 }
 
+div#gvdButton {
+    padding-top: 3px;
+    height: 25px;
+    text-align: center;
+    float: left;
+    cursor: pointer;
+    left: 10px;
+}
+
 #wrap {
     bottom: 25px;
     position: fixed;
     width: 320px;
-    left: 0;
+    left: 5px;
     -webkit-box-shadow: 0 0 30px #9E9E9E;
     -moz-box-shadow: 0 0 30px #9E9E9E;
     box-shadow: 0 0 30px #9E9E9E;

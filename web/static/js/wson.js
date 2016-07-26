@@ -50,6 +50,7 @@ function WSON(address){
             };
             this.send(msg, args);
         });
+        // TODO: promise never resolves if server respond with an error
     };
 
     this.send = function(msg, data){

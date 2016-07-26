@@ -97,13 +97,12 @@ if __name__ == "__main__":
     mf.write(json.dumps(manifest, indent=2).replace("\\\\", "/"))
     mf.close()
 
-#    print("Packing...")
-#
-#    call([
-#        CHROME,
-#        "--pack-extension=" + os.path.realpath(PATH),
-#        "--pack-extension-key=" + os.path.realpath(KEY_PATH),
-#    ])
+    print("Packing...")
+    call([
+        CHROME,
+        "--pack-extension=" + os.path.realpath(PATH),
+        "--pack-extension-key=" + os.path.realpath(KEY_PATH),
+    ])
 
 #    TODO: Delete folder after packing
 

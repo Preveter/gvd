@@ -4,3 +4,4 @@
 /server/db/gvd.db
 /plugin/.extension
 *.pem
+*.crx
