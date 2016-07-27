@@ -30,7 +30,7 @@
             </div>
             <div id="signupForm2" style="display:none">
                 <label for="s_mottoInput">Вставьте в любое место вашего девиза следующую строку:</label>
-                <input type="text" title="motto" id="s_mottoInput" onclick="this.select();">
+                <input type="text" title="motto" id="s_mottoInput" readonly>
             </div>
             <div id="signupForm3" style="display:none">
                 <label for="s_passInput">Придумайте и введите пароль:</label>

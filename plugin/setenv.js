@@ -1,5 +1,7 @@
 (function(){
 
+    window.GV_ACCESS = true;
+
     window.staticLink = function(link){
         return chrome.extension.getURL("" + link);
     };

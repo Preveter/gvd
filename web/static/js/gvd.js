@@ -20,10 +20,13 @@
 
         var el = this.element = document.getElementById("listContainer");
         
-        el.querySelector("#jumpButton").onclick = function(){
-            wson.send("jump");
+        el.querySelector("#jumpButton").onclick = () => {
+            if (this.checkJumpAbility() === false)
+                alert("В данный момент вам недоступно подземелье.");
+            else
+                wson.send("jump");
         };
-        el.querySelector("#exitButton").onclick = function(){
+        el.querySelector("#exitButton").onclick = () => {
             wson.send("logout");
         };
 
@@ -121,16 +124,57 @@
         // something else
 
         this.jumpAlert = function(){
-            let sound = new Audio("static/sounds/jump.mp3");
+            let sound = new Audio(staticLink("sounds/jump.mp3"));
             sound.volume = 0.2;
             sound.play();
 
             if (notifications){
                 notify("GodvilleDungeon", {
                     tag: "gvd_jump",
-                    body: "Пора прагыть в подземелье!"
+                    body: "Готовьтесь прыгать в подземелье!"
                 });
             }
+        };
+
+        this.highlightJump = function(){
+            if (!GV_ACCESS) return;
+
+            let links = document.querySelectorAll("#actions a");
+
+            for (let link of links){
+                if (~link.innerHTML.indexOf("подземелье")){
+                    link.style.background = "red";
+                    link.style.color = "white";
+                    link.style.fontWeight = "600";
+                    link.style.padding = "1px 4px 3px";
+                    link.style.margin = "2px";
+                }
+            }
+        };
+
+        this.getGodName = function(){
+            if (!GV_ACCESS) return "";
+
+            let links = document.querySelectorAll("#stats a");
+
+            for (let link of links){
+                if (~link.href.indexOf("/gods/")){
+                    return link.href.replace(/.*\/gods\//,"");
+                }
+            }
+        };
+
+        this.checkJumpAbility = function(){
+            if (!GV_ACCESS) return null;
+
+            let links = document.querySelectorAll("#actions a");
+
+            for (let link of links) {
+                if (~link.innerHTML.indexOf("подземелье") && link.style.display != "none") {
+                    return true
+                }
+            }
+            return false;
         };
 
         this.reset = function(){
@@ -155,7 +199,7 @@
                 user.jump = jump;
 
                 if (user != this.me){
-                    let sound = new Audio("static/sounds/invite.mp3");
+                    let sound = new Audio(staticLink("sounds/invite.mp3"));
                     sound.volume = 0.2;
                     sound.play();if (notifications){
                         notify("GodvilleDungeon", {
@@ -284,22 +328,37 @@
         this.startTimer = function(){
             let timer_start = Date.now();
             let timer_delay = this.delay*1000;
+            let timer_end = new Date(timer_start + timer_delay);
+            let notified = false;
+            let countdownElement = null;
             timer = setInterval(() => {
                 var now = new Date();
-                if (now > timer_start + timer_delay){
+
+                if (now > timer_end){
                     clearInterval(timer);
+                    gvd.highlightJump();
                     timerElement ? timerElement.innerHTML = "" : false;
-                    if (~members.indexOf(gvd.me)) gvd.jumpAlert();
+                    notified ? document.body.removeChild(countdownElement) : false;
                     gvd.removeJump(this);
-                }else{
-                    var jt = new Date(timer_start + timer_delay);
-                    var left = parseInt((jt - now)/1000);
-                    var left_str =
-                        ((left-left%60)/60<10?'0':'') + (left-left%60)/60 +
-                        ":" +
-                        (left%60<10?'0':'') + left%60;
-                    timerElement ? timerElement.innerHTML = left_str : false;
+                    return;
                 }
+
+                if (now > timer_end - 10000 && !notified){
+                    if (~members.indexOf(gvd.me)) gvd.jumpAlert();
+                    notified = true;
+
+                    countdownElement = document.createElement("div");
+                    countdownElement.id = "GVD_Countdown";
+                    document.body.appendChild(countdownElement);
+                }
+
+                let left = parseInt((timer_end - now)/1000);
+                let left_str =
+                    ((left-left%60)/60<10?'0':'') + (left-left%60)/60 +
+                    ":" +
+                    (left%60<10?'0':'') + left%60;
+                timerElement ? timerElement.innerHTML = left_str : false;
+                notified ? countdownElement.innerHTML = left_str : false;
             },300)
         };
 
@@ -357,7 +416,9 @@
             if(e.keyCode==13)
                 this.element.querySelector("#confirmButton").click();
         });
-        nameInput.focus();
+        nameInput.value = gvd.getGodName();
+        if (nameInput.value == "") nameInput.focus();
+        else passInput.focus();
 
         var loginHandler = function(){};
         var logoutHandler = function(){};
@@ -452,6 +513,7 @@
                     loginForm.style.display = "none";
                     signupContainer.style.display = "block";
                     signupForm1.style.display = "block";
+                    nameInput.value = gvd.getGodName();
                     nameInput.focus();
                     return new Promise(resolve => proceedBtn.onclick = resolve)
                 })
@@ -460,6 +522,7 @@
                     signupForm1.style.display = "none";
                     signupForm2.style.display = "block";
                     mottoInput.value = d["motto"];
+                    mottoInput.onclick = mottoInput.select;
                     mottoInput.focus();
                     return testMotto()
                 })

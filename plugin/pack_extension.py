@@ -71,7 +71,7 @@ if __name__ == "__main__":
     new_css = copy_files(CSS, os.path.join(PATH, "css"))
 
     new_img = copy_folder(IMG_DIR, os.path.join(PATH, "img"))
-    new_sound = copy_folder(SOUND_DIR, os.path.join(PATH, "sound"))
+    new_sound = copy_folder(SOUND_DIR, os.path.join(PATH, "sounds"))
 
     print("Creating manifest...")
 

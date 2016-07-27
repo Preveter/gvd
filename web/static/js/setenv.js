@@ -1,5 +1,7 @@
 (function(){
 
+    window.GV_ACCESS = false;
+
     window.staticLink = function(link){
         return "static/" + link;
     };
