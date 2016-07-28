@@ -1,5 +1,11 @@
 import json
-import tornado.websocket as websocket
+from tornado import (
+    websocket,
+    gen,
+    ioloop,
+)
+
+KEEP_ALIVE_INTERVAL = 60
 
 
 class WSON(websocket.WebSocketHandler):
@@ -7,6 +13,7 @@ class WSON(websocket.WebSocketHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.handlers = {}
+        ioloop.IOLoop.current().call_later(KEEP_ALIVE_INTERVAL, self.keep_alive)
 
     def check_origin(self, origin):
         return True
@@ -25,6 +32,12 @@ class WSON(websocket.WebSocketHandler):
         for name in names:
             if name in self.handlers:
                 self.handlers[name](msg_arr[name])
+
+    @gen.coroutine
+    def keep_alive(self):
+        while True:
+            self.send("keep_alive", {})
+            yield gen.sleep(KEEP_ALIVE_INTERVAL)
 
     def on(self, msg, handler):
         self.handlers[msg] = handler
