@@ -2,7 +2,7 @@
     "use strict";
 
     const WS_ADDR = "wss://polik94.ddns.net/gvd/ws";
-
+    const WRAP_ID = "gvd_wrap";
 
     function getCookie(name){
         var matches = document.cookie.match(new RegExp(
@@ -19,6 +19,9 @@
         this.me = null;
 
         var el = this.element = document.getElementById("listContainer");
+        //var jump_el = document.getElementById("jumpContainer");
+
+        let timer;
         
         el.querySelector("#jumpButton").onclick = () => {
             if (this.checkJumpAbility() === false)
@@ -46,6 +49,43 @@
                         }
                     });
             }
+
+        this.startTimer = function(){
+            let notified = [];
+            let countdownElement;
+            timer = setInterval(() => {
+                for (let jump of this.jumps) {
+                    jump.updateTimeLeft();
+
+                    if (typeof notified[jump] == "undefined"){
+                        notified[jump] = false;
+                    }
+
+                    if (jump.time_left <= 10 && !notified[jump]) {
+                        if (jump.isMember(this.me)) this.jumpAlert();
+                        notified[jump] = true;
+
+                        countdownElement = document.createElement("div");
+                        countdownElement.id = "GVD_Countdown";
+                        document.body.appendChild(countdownElement);
+                    }
+
+                    if (jump.time_left <= 0) {
+                        this.highlightJump();
+                        notified[jump] ? document.body.removeChild(countdownElement) : false;
+                        this.removeJump(jump);
+                        return;
+                    }
+
+                    (notified[jump]) ? countdownElement.innerHTML = jump.time_left_str : false;
+                    //(jump == this.me.jump) ? jump_el.querySelector("#jumpTimer").innerHTML = jump.time_left_str : false;
+                }
+            },250);
+        };
+
+        this.setState = function(state){
+            document.getElementById(WRAP_ID).className = state;
+        };
 
         // users list handling
 
@@ -93,6 +133,7 @@
 
         this.addJump = function(jump){
             this.jumps.push(jump);
+            jump.draw();
             this.redrawJumps();
         };
 
@@ -186,27 +227,32 @@
             this.users = [];
 
             this.me = null;
+            clearInterval(self.timer);
         };
         
         this.activate = function(){
             this.element.style.display = "block";
+            this.startTimer();
             
             wson.on("jump", d => {
                 let user = this.getUserByName(d["user"]);
 
                 let jump = new Jump(d["delay"], user);
-                this.addJump(jump);
                 user.jump = jump;
+                this.addJump(jump);
 
                 if (user != this.me){
                     let sound = new Audio(staticLink("sounds/invite.mp3"));
                     sound.volume = 0.2;
-                    sound.play();if (notifications){
+                    sound.play();
+                    if (notifications){
                         notify("GodvilleDungeon", {
                             tag: "gvd_party",
                             body: d["user"] + " собирает команду!"
                         });
                     }
+                }else{
+                    this.setState("jump");
                 }
             });
 
@@ -218,6 +264,10 @@
 
                 user.jump = jump;
                 jump.addMember(user);
+                
+                if (user == this.me){
+                    this.setState("jump");
+                }
             });
 
             wson.on("user", d => {
@@ -237,6 +287,13 @@
                 }
                 this.redrawUsers();
             });
+
+            wson.on("chat", d => {
+                let user = this.getUserByName(d["user"]);
+                let text = d["message"];
+                if (this.me && this.me.jump)
+                    this.me.jump.updateChat(user, text);
+            });
             
             wson.fetch("data")
                 .then(d => {
@@ -255,12 +312,12 @@
                     for (let info of d["jumps"]){
                         let user = this.getUserByName(info["initiator"]);
                         let jump = new Jump(info["delay"], user);
-                        this.addJump(jump);
                         for (let name of info["members"]){
                             let member = this.getUserByName(name);
                             member.jump = jump;
                             jump.addMember(member);
                         }
+                        this.addJump(jump);
                     }
 
                     this.redrawUsers();
@@ -272,6 +329,7 @@
             wson.off("jump");
             wson.off("ready");
             wson.off("user");
+            wson.off("chat");
             this.reset();
         };
 
@@ -283,12 +341,19 @@
         this.jump = null;
         this.online = online;
 
-        var el = this.element = document.createElement("div");
+        let el = this.element = document.createElement("div");
         el.className = "userInfo";
         el.id = name;
 
+        let marker = document.createElement("div");
+        marker.className = "stateMarker";
+        el.appendChild(marker);
+
+        let nameElement = document.createElement("span");
+        el.appendChild(nameElement);
+
         this.draw = function(){
-            el.innerHTML = this.name;
+            nameElement.innerHTML = this.name;
         };
 
         this.draw();
@@ -300,71 +365,61 @@
         this.initiator = initiator;
 
         let members = [this.initiator];
+        let chat = [];
 
-        var timer;
+        let timer_start = Date.now();
+        this.time_left = 0;
+        this.time_left_str = "";
 
-        var el = this.element = document.createElement("div");
+        let el = this.element = document.createElement("div");
         el.className = "jumpBlock";
 
-        var timerElement = document.createElement("div");
-        timerElement.className = "timer";
-        el.appendChild(timerElement);
-        var infoElement = document.createElement("div");
-        infoElement.className = "info";
-        el.appendChild(infoElement);
+        el.innerHTML = `
+            <div class='timer'></div>
+            <div class='info'></div>
+            <button class="joinBtn">Присоединиться</button>
+            <div class="membersList"></div>
+            <div class="jumpChat">
+                <div class="chatMessages">Тут типа чат</div>
+                <div class="chatForm">
+                    <input type="text">
+                    <input type="button" value="Send">
+                </div>
+            </div>`;
 
-        var joinBtn = document.createElement("button");
-        joinBtn.className = "joinBtn";
-        joinBtn.innerHTML = "Присоединиться";
-        el.appendChild(joinBtn);
+        let timerElement = el.querySelector(".timer");
+        let infoElement = el.querySelector(".info");
+        let joinBtn = el.querySelector(".joinBtn");
+        let membersList = el.querySelector(".membersList");
 
-        var membersList = document.createElement("div");
-        membersList.className = "membersList";
-        el.appendChild(membersList);
         joinBtn.onclick = () => {
             this.join();
         };
 
-        this.startTimer = function(){
-            let timer_start = Date.now();
-            let timer_delay = this.delay*1000;
-            let timer_end = new Date(timer_start + timer_delay);
-            let notified = false;
-            let countdownElement = null;
-            timer = setInterval(() => {
-                var now = new Date();
+        let chatElement = el.querySelector(".jumpChat");
+        let chatMessages = chatElement.querySelector(".chatMessages");
+        let chatInput = chatElement.querySelector("input[type=text]");
+        let chatBtn = chatElement.querySelector("input[type=button]");
 
-                if (now > timer_end){
-                    clearInterval(timer);
-                    gvd.highlightJump();
-                    timerElement ? timerElement.innerHTML = "" : false;
-                    notified ? document.body.removeChild(countdownElement) : false;
-                    gvd.removeJump(this);
-                    return;
-                }
+        chatBtn.onclick = () => {
+            this.chatSend();
+            chatInput.value = "";
+            chatInput.focus();
+        };
 
-                if (now > timer_end - 10000 && !notified){
-                    if (~members.indexOf(gvd.me)) gvd.jumpAlert();
-                    notified = true;
-
-                    countdownElement = document.createElement("div");
-                    countdownElement.id = "GVD_Countdown";
-                    document.body.appendChild(countdownElement);
-                }
-
-                let left = parseInt((timer_end - now)/1000);
-                let left_str =
-                    ((left-left%60)/60<10?'0':'') + (left-left%60)/60 +
-                    ":" +
-                    (left%60<10?'0':'') + left%60;
-                timerElement ? timerElement.innerHTML = left_str : false;
-                notified ? countdownElement.innerHTML = left_str : false;
-            },300)
+        chatInput.onkeydown = event => {
+            if (event.keyCode != 13) return;
+            this.chatSend();
+            chatInput.value = "";
         };
 
         this.addMember = function(member){
             members.push(member);
             this.redrawMembers();
+        };
+
+        this.isMember = function(user){
+            return ~members.indexOf(user);
         };
 
         this.removeMember = function(member){
@@ -375,6 +430,32 @@
             this.redrawMembers();
         };
 
+        this.updateTimeLeft = function(){
+            let timer_delay = this.delay*1000;
+            let end = new Date(timer_start + timer_delay);
+            let now = new Date();
+
+            let left = this.time_left = parseInt((end - now)/1000);
+            this.time_left_str =
+                ((left-left%60)/60<10?'0':'') + (left-left%60)/60 +
+                ":" +
+                (left%60<10?'0':'') + left%60;
+            timerElement ? timerElement.innerHTML = this.time_left_str : false;
+        };
+
+        this.updateChat = function(user, message){
+            chat.push({name: user.name, text: message});
+            this.redrawChat();
+        };
+
+        this.join = function(){
+            wson.send("join", {member: this.initiator.name});
+        };
+
+        this.chatSend = function(){
+            wson.send("chat", {user: gvd.me.name, message: chatInput.value});
+        };
+
         this.redrawMembers = function(){
             membersList.innerHTML = "";
             for (let user of members){
@@ -383,23 +464,26 @@
             }
         };
 
-        this.join = function(){
-            wson.send("join", {member: this.initiator.name});
+        this.redrawChat = function(){
+            chatMessages.innerHTML = "";
+            for (let msg of chat){
+                chatMessages.innerHTML += `<div class='chatItem fr_msg_l'>${msg['name']}: ${msg['text']}</div>`;
+            }
         };
 
         this.draw = function(){
             timerElement.innerHTML = this.delay;
             infoElement.innerHTML = this.initiator.name;
 
+            chatElement.style.display = (this == gvd.me.jump) ? "block" : "none";
+
             this.redrawMembers();
+            this.redrawChat();
         };
 
-        this.reset = function(){
-            clearInterval(timer);
-        };
+        this.reset = function(){};
 
         this.draw();
-        this.startTimer();
         return this;
     }
 

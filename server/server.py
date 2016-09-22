@@ -18,6 +18,10 @@ MOTTO_LEN = 8
 SALT_LEN = 32
 JUMP_DELAY = 60  # = (1 minute) * 60
 
+STATE_READY = 1
+STATE_CD = 0
+STATE_UNKNOWN = -1
+
 WEB_PATH = os.path.join(os.path.dirname(__file__), "..", "web")
 
 
@@ -37,6 +41,8 @@ class ActiveUser:
     def __init__(self, name):
         self.name = name
         self.online = True
+        self.state = STATE_UNKNOWN
+        self.cooldown = 0
         self.clients = []
 
 
@@ -153,6 +159,12 @@ class GVD:
                 self.broadcast("user", {"name": new_user.name, "status": "on"})  # TODO: Think what to do with it
             new_user.clients.append(client)
 
+    def set_client_state(self, client, state, cooldown=0):
+        user = self.get_client_user(client)
+        user.state = state
+        user.cooldown = cooldown
+        self.broadcast("user", {"name": user.name, "state": user.state, "cooldown": user.cooldown})
+
     def get_jump_by_member(self, user):
         """
         :param user:
@@ -163,6 +175,13 @@ class GVD:
             if user in j.users:
                 return j
         return None
+
+    def get_god_info(self, name):
+        user = self.get_user_by_name(name)
+        return None if user is None else{
+            "name": user.name,
+            "online": user.online,
+        }
 
     def get_gods_list(self):
         info = []
@@ -218,6 +237,27 @@ class GVD:
         jump.add_user(user)
         self.broadcast("join", {"user": user.name, "member": member.name})
 
+    def chat(self, client, message):
+        user = self.get_client_user(client)
+        if user is None:
+            client.send_error_msg("I don't know who you are.")
+            return
+
+        jump = self.get_jump_by_member(user)
+
+        if jump is None:
+            client.send_error_msg("You have to join group before starting messaging")
+            return
+
+        message = message.strip()
+
+        if not len(message):
+            return
+
+        for user in jump.users:
+            for client in user.clients:
+                client.send("chat", {"user": user.name, "message": message})
+
 
 class SocketHandler(WSON):
 
@@ -241,6 +281,8 @@ class SocketHandler(WSON):
         self.on("data", self.load_data)
         self.on("jump", self.jump)
         self.on("join", self.join)
+        self.on("chat", self.chat)
+        self.on("user", self.update_user)
         self.on("logout", self.close_session)
 
     def open(self):
@@ -381,6 +423,16 @@ class SocketHandler(WSON):
             },
         })
 
+    def update_user(self, data):
+        if not self.auth_status:
+            self.send_error_msg("Unauthorized")
+            return
+
+        if data["state"] == STATE_CD:
+            self.gvd.set_client_state(self, data["state"], data["cooldown"])
+        else:
+            self.gvd.set_client_state(self, data["state"])
+
     def jump(self, _):
         if not self.auth_status:
             self.send_error_msg("Unauthorized")
@@ -395,6 +447,14 @@ class SocketHandler(WSON):
 
         name = data["member"]
         self.gvd.join_jump(self, name)
+
+    def chat(self, data):
+        if not self.auth_status:
+            self.send_error_msg("Unauthorized")
+            return
+
+        text = data["message"]
+        self.gvd.chat(self, text)
 
 
 def sh_factory(gvd):

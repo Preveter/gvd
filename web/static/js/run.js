@@ -9,6 +9,19 @@
             <div id="jumpList"></div>
             <div id="userList"></div>
         </div>
+        
+        <!--<div id="jumpContainer">
+            <div id="jumpOwner"></div>
+            <div id="jumpTimer"></div>
+            <div id="jumpMembers"></div>
+            <div id="jumpChat">
+                <div class="chat"></div>
+                <div class="chatForm">
+                    <input type="text" id="chatInput">
+                    <input type="button" value="Send" id="chatSend">
+                </div>
+            </div>
+        </div>-->
     
         <div id="loginContainer" style="display:none">
             <div id="loginForm" class="authForm" style="display:none">
@@ -43,7 +56,7 @@
     `;
 
     let wrap = document.createElement("div");
-    wrap.id = "wrap";
+    wrap.id = "gvd_wrap";
     wrap.innerHTML = content;
     document.body.appendChild(wrap);
 

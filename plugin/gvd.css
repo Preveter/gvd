@@ -17,7 +17,7 @@ div#gvdButton {
     left: 10px;
 }
 
-#wrap {
+#gvd_wrap {
     bottom: 25px;
     position: fixed;
     width: 320px;
@@ -44,6 +44,14 @@ div#gvdButton {
     width: 18px;
     height: 18px;
     vertical-align: middle;
+}
+
+#gvd_wrap #jumpButton {
+    visibility: visible;
+}
+
+#gvd_wrap.jump #jumpButton {
+    visibility: hidden;
 }
 
 #loginContainer {
@@ -80,6 +88,26 @@ div#gvdButton {
     font-size: 14px;
     background-color: transparent;
     border-top: 1px solid lightgray;
+    position: relative;
+}
+
+#listContainer #userList .userInfo .stateMarker {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    margin-top: -4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background-color: transparent;
+}
+
+#listContainer #userList .userInfo .stateMarker.ready {
+    background-color: #13c113;
+}
+
+#listContainer #userList .userInfo .stateMarker.cd {
+    background-color: red;
 }
 
 .jumpBlock {
@@ -110,6 +138,14 @@ div#gvdButton {
     box-sizing: border-box;
     height: 22px;
     margin: 4px;
+}
+
+#gvd_wrap .jumpBlock .joinBtn {
+    display: inline-block;
+}
+
+#gvd_wrap.jump .jumpBlock .joinBtn {
+    display: none;
 }
 
 #GVD_Countdown {
