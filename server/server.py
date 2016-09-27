@@ -18,6 +18,7 @@ MOTTO_LEN = 8
 SALT_LEN = 32
 JUMP_DELAY = 60  # = (1 minute) * 60
 
+STATE_FIGHT = 2
 STATE_READY = 1
 STATE_CD = 0
 STATE_UNKNOWN = -1
@@ -42,8 +43,10 @@ class ActiveUser:
         self.name = name
         self.online = True
         self.state = STATE_UNKNOWN
-        self.cooldown = 0
         self.clients = []
+
+        self.cooldown = 0
+        self.fight_id = ""
 
 
 class Jump:
@@ -159,11 +162,17 @@ class GVD:
                 self.broadcast("user", {"name": new_user.name, "status": "on"})  # TODO: Think what to do with it
             new_user.clients.append(client)
 
-    def set_client_state(self, client, state, cooldown=0):
+    def set_client_state(self, client, state, **kwargs):
         user = self.get_client_user(client)
         user.state = state
-        user.cooldown = cooldown
-        self.broadcast("user", {"name": user.name, "state": user.state, "cooldown": user.cooldown})
+        obj = {"name": user.name, "state": user.state}
+        if state == STATE_CD:
+            user.cooldown = kwargs["cooldown"]
+            obj["cooldown"] = user.cooldown
+        if state == STATE_FIGHT:
+            user.fight_id = kwargs["fight_id"]
+            obj["fight_id"] = user.fight_id
+        self.broadcast("user", obj)
 
     def get_jump_by_member(self, user):
         """
@@ -243,20 +252,23 @@ class GVD:
             client.send_error_msg("I don't know who you are.")
             return
 
-        jump = self.get_jump_by_member(user)
-
-        if jump is None:
-            client.send_error_msg("You have to join group before starting messaging")
-            return
-
         message = message.strip()
-
         if not len(message):
             return
 
-        for user in jump.users:
-            for client in user.clients:
-                client.send("chat", {"user": user.name, "message": message})
+        jump = self.get_jump_by_member(user)
+        if jump is not None:
+            for u in jump.users:
+                for cl in u.clients:
+                    cl.send("chat", {"user": user.name, "message": message})
+        elif user.state == STATE_FIGHT:
+            for u in self.users:
+                if u.state != STATE_FIGHT or u.fight_id != user.fight_id:
+                    continue
+                for cl in u.clients:
+                    cl.send("chat", {"user": user.name, "message": message})
+
+        client.send_error_msg("You have to join group before starting messaging")
 
 
 class SocketHandler(WSON):
