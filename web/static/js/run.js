@@ -1,11 +1,12 @@
 (function(){
 
     let content = `
-        <div id="listContainer" style="display:none">
+        <div id="gvdContainer" style="display:none">
             <div id="controlsBar">
                 <a href="#" id="exitButton"><img src="${staticLink("img/logout.png")}" alt="Выход"></a>
                 <input type="button" id="jumpButton" value="Создать группу">
             </div>
+            <div id="viewContainer"></div>
             <div id="jumpList"></div>
             <div id="userList"></div>
         </div>
@@ -69,15 +70,24 @@
         btn.innerHTML = "GVD";
 
         btn.onclick = () => {
-            if (wrap.style.display != "none") wrap.style.display = "none";
-            else wrap.style.display = "block";
+            if (wrap.className != "hidden") wrap.className = "hidden";
+            else wrap.className = "";
         };
 
-        wrap.style.display = "none";
+        wrap.className = "hidden";
         // TODO: Do not hide if login is needed
         
         container.appendChild(btn);
     }
-    
-    window.GVD_run();
+
+    /*let liveLink = document.getElementById("fbclink");
+    if (liveLink && liveLink.href != ""){
+        let p = liveLink.href.lastIndexOf("/");
+        if (~p){
+            let id = liveLink.href.substr(p);
+            window.GVD_chat_init();
+        }
+    }else*/
+    if (document.getElementById("page_settings_link")) window.GVD_run();
+
 })();

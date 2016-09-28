@@ -82,6 +82,7 @@ class GVD:
             if cl in u.clients:
                 u.clients.remove(cl)
             if len(u.clients) == 0:
+                u.online = False
                 self.broadcast("user", {"name": u.name, "status": "off"})  # TODO: Think what to do with it
 
     def broadcast(self, msg, data):  # TODO: Think, do i really need it here
@@ -198,6 +199,7 @@ class GVD:
             info.append({
                 "name": user.name,
                 "online": user.online,
+                "state": user.state,
             })
         return info
 
@@ -267,8 +269,8 @@ class GVD:
                     continue
                 for cl in u.clients:
                     cl.send("chat", {"user": user.name, "message": message})
-
-        client.send_error_msg("You have to join group before starting messaging")
+        else:
+            client.send_error_msg("You have to join group before starting messaging")
 
 
 class SocketHandler(WSON):
@@ -441,7 +443,9 @@ class SocketHandler(WSON):
             return
 
         if data["state"] == STATE_CD:
-            self.gvd.set_client_state(self, data["state"], data["cooldown"])
+            self.gvd.set_client_state(self, data["state"], cooldown=data["cooldown"])
+        elif data["state"] == STATE_FIGHT:
+            self.gvd.set_client_state(self, data["state"], fight_id=data["fight_id"])
         else:
             self.gvd.set_client_state(self, data["state"])
 

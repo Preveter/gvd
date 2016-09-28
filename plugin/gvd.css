@@ -29,6 +29,11 @@ div#gvdButton {
     border-radius: 1px;
     z-index: 301;
     padding: 5px;
+    display: block;
+}
+
+#gvd_wrap.hidden {
+    display: none;
 }
 
 #controlsBar {
@@ -46,11 +51,11 @@ div#gvdButton {
     vertical-align: middle;
 }
 
-#gvd_wrap #jumpButton {
+#gvdContainer #jumpButton {
     visibility: visible;
 }
 
-#gvd_wrap.jump #jumpButton {
+#gvdContainer.jump #jumpButton {
     visibility: hidden;
 }
 
@@ -83,7 +88,7 @@ div#gvdButton {
     text-align: center;
 }
 
-#listContainer #userList .userInfo {
+#gvdContainer #userList .userInfo {
     padding: 10px;
     font-size: 14px;
     background-color: transparent;
@@ -91,7 +96,7 @@ div#gvdButton {
     position: relative;
 }
 
-#listContainer #userList .userInfo .stateMarker {
+#gvdContainer #userList .userInfo .stateMarker {
     position: absolute;
     right: 10px;
     top: 50%;
@@ -102,11 +107,11 @@ div#gvdButton {
     background-color: transparent;
 }
 
-#listContainer #userList .userInfo .stateMarker.ready {
+#gvdContainer #userList .userInfo .stateMarker.ready {
     background-color: #13c113;
 }
 
-#listContainer #userList .userInfo .stateMarker.cd {
+#gvdContainer #userList .userInfo .stateMarker.cd {
     background-color: red;
 }
 
@@ -140,11 +145,15 @@ div#gvdButton {
     margin: 4px;
 }
 
-#gvd_wrap .jumpBlock .joinBtn {
+.jumpBlock .membersList {
+    clear: left;
+}
+
+#gvdContainer .jumpBlock .joinBtn {
     display: inline-block;
 }
 
-#gvd_wrap.jump .jumpBlock .joinBtn {
+#gvdContainer.jump .jumpBlock .joinBtn {
     display: none;
 }
 
