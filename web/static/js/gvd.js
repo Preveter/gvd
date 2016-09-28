@@ -7,32 +7,78 @@
 
     function getCookie(name){
         var matches = document.cookie.match(new RegExp(
-            "(?:^|; )" + name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, '\\$1') + "=([^;]*)"
+            "(?:^|; )" + name.replace(/([.$?*|{}()\[\]\\\/+^])/g, '\\$1') + "=([^;]*)"
         ));
         return matches ? decodeURIComponent(matches[1]) : undefined;
     }
 
-    ////////////////////////////////////////////////////
+    ///////////////////////////////////////////
+
+    const TEMPLATES = {
+        list: `
+            <div id="controlsBar">
+                <a href="#" id="exitButton"><img src="${staticLink("img/logout.png")}" alt="Выход"></a>
+                <input type="button" id="jumpButton" value="Создать группу">
+            </div>
+            <div id="jumpList"></div><div id="userList"></div>
+            `,
+        list_jump: `
+            <div class='timer'></div><div class='info'></div>
+            <button class="joinBtn">Присоединиться</button><div class="membersList"></div>
+            `,
+        jump: `
+            <div class='timer'></div>
+            <div class='info'></div>
+            <div class="membersList"></div>
+            <div class="jumpChat">
+                <div class="chatMessages">Тут типа чат</div>
+                <div class="chatForm">
+                    <input type="text">
+                    <input type="button" value="Send">
+                </div>
+            </div>
+            `,
+        auth: `
+            <div id="loginContainer">
+                <div id="loginForm" class="authForm">
+                    <label for="nameInput">Имя бога:</label>
+                    <input type="text" title="login" id="nameInput" value="">
+                    <label for="passInput">Пароль:</label>
+                    <input type="password" title="password" id="passInput" value="">
+                    <div class="buttonContainer">
+                        <input type="button" id="confirmButton" value="Войти">
+                        <input type="button" id="signupButton" value="Регистрация">
+                    </div>
+                </div>
+            </div>
+            <div id="signupContainer" class="authForm" style="display:none">
+                <div id="signupForm1" style="display:none">
+                    <label for="s_nameInput">Ваш логин в Годвилле:</label>
+                    <input type="text" title="login" id="s_nameInput" value="">
+                </div>
+                <div id="signupForm2" style="display:none">
+                    <label for="s_mottoInput">Вставьте в любое место вашего девиза следующую строку:</label>
+                    <input type="text" title="motto" id="s_mottoInput" readonly>
+                </div>
+                <div id="signupForm3" style="display:none">
+                    <label for="s_passInput">Придумайте и введите пароль:</label>
+                    <input type="password" title="password" id="s_passInput" value="">
+                </div>
+                <div class="buttonContainer">
+                    <input type="button" id="signupProceed" value="Далее">
+                </div>
+            </div>
+            `
+    };
 
     function GVD(){
         this.users = [];
         this.jumps = [];
         this.me = null;
 
-        var el = this.element = document.getElementById(CONTAINER_ID);
-        //var jump_el = document.getElementById("jumpContainer");
+        this.element = document.getElementById("gvdContainer");
 
         let timer;
-        
-        el.querySelector("#jumpButton").onclick = () => {
-            if (this.checkJumpAbility() === false)
-                alert("В данный момент вам недоступно подземелье.");
-            else
-                wson.send("jump");
-        };
-        el.querySelector("#exitButton").onclick = () => {
-            wson.send("logout");
-        };
 
         let notifications = false;
         if ("Notification" in window)
@@ -90,7 +136,10 @@
             document.getElementById(CONTAINER_ID).className = state;
             switch (state){
                 case "jump":
-                    views.addView(new ViewJump(this.me.jump));
+                    let view = new ViewJump(this.me.jump);
+                    views.addView(view);
+                    views.showOnly(view);
+                    tabs.bindView(1, view, "Прыжок");
                     break;
                 default:
                     break;
@@ -164,6 +213,13 @@
 
         // something else
 
+        this.jump = function(){
+            if (this.checkJumpAbility() === false)
+                alert("В данный момент вам недоступно подземелье.");
+            else
+                wson.send("jump");
+        };
+
         this.jumpAlert = function(){
             let sound = new Audio(staticLink("sounds/jump.mp3"));
             sound.volume = 0.2;
@@ -217,21 +273,8 @@
             }
             return false;
         };
-
-        this.reset = function(){
-            while (this.jumps.length > 0){
-                let jump = this.jumps.pop();
-                jump.reset();
-            }
-
-            this.users = [];
-
-            this.me = null;
-            clearInterval(self.timer);
-        };
         
         this.activate = function(){
-            this.element.style.display = "block";
             this.startTimer();
             
             wson.on("jump", d => {
@@ -321,253 +364,42 @@
                         for (let name of info["members"]){
                             let member = this.getUserByName(name);
                             member.jump = jump;
-                            jump.addMember(member);
                             if (member == this.me){
                                 this.setState("jump");
                             }
+                            jump.addMember(member);
                         }
                         this.addJump(jump);
                     }
 
                     views.redraw("UserList", this.freeUsers());
                 });
+
+            this.view = new ViewNormal(this);
+            views.addView(this.view);
+            tabs.bindView(0, this.view);
         };
         
         this.deactivate = function(){
-            this.element.style.display = "none";
             wson.off("jump");
-            wson.off("ready");
+            wson.off("join");
             wson.off("user");
             wson.off("chat");
-            this.reset();
+            views.removeView(this.view);
+            tabs.bindView(1, null);
+
+            this.jumps = [];
+            this.users = [];
+
+            this.me = null;
+            clearInterval(timer);
         };
 
-        views.addView(new ViewNormal());
+        this.logout = function(){
+            wson.send("logout");
+        };
 
         return this;
-    }
-
-    var views = {
-        views: [],
-        addView (view){
-            this.views.push(view);
-            document.getElementById("viewContainer").appendChild(view.draw());
-        },
-        removeView (view){
-            let index = this.views.indexOf(view);
-            if (~index){
-                document.getElementById("viewContainer").removeChild(this.views[index].element);
-                this.views.splice(index, 1);
-            }
-        },
-        redraw (element){
-            Array.prototype.shift.call(arguments);
-            for (let view of this.views){
-                let func = view["redraw" + element];
-                if (!func){
-                    throw("Active view has no handler with name 'redraw" + element + "'");
-                }
-                view["redraw" + element].apply(view, arguments);
-            }
-        }
-    };
-
-    class View{
-        constructor () {
-            this.jump_elements = [];
-            this.user_elements = [];
-        }
-
-        draw () {}
-
-        getJumpElement (jump) {
-            for (let pair of this.jump_elements){
-                if (pair["jump"] == jump){
-                    return pair["element"];
-                }
-            }
-            return null;
-        }
-        getUserElement (user) {
-            for (let pair of this.user_elements){
-                if (pair["user"] == user){
-                    return pair["element"];
-                }
-            }
-            return null;
-        }
-        redrawUserList () {};
-        redrawUser (user) {};
-        redrawUserState (user) {};
-        redrawJumpList () {};
-        redrawJump (jump) {};
-        redrawJumpTimer (jump) {};
-        redrawJumpMembers (jump) {};
-        redrawJumpChat (jump) {};
-    }
-
-    class ViewNormal extends View {
-        draw () {
-            this.element = document.createElement("div");
-            this.element.innerHTML = `<div id="jumpList"></div><div id="userList"></div>`;
-            //this.redrawUserList();
-            //this.redrawJumpList();
-            return this.element;
-        }
-        redrawJumpList (jumps) {
-            let list = this.element.querySelector("#jumpList");
-
-            let unchanged = [];
-            for (let i = this.jump_elements.length - 1; i >= 0; i--) {
-                let index = jumps.indexOf(this.jump_elements[i]["jump"]);
-                if (!~index) {
-                    list.removeChild(this.jump_elements[i]["element"]);
-                    this.jump_elements.splice(i, 1);
-                } else {
-                    unchanged.push(jumps[index]);
-                }
-            }
-
-            for (let jump of jumps) {
-                if (~unchanged.indexOf(jump)) continue;
-                let element = document.createElement("div");
-                this.jump_elements.push({jump: jump, element: element});
-                this.redrawJump(jump, element);
-                list.appendChild(element);
-            }
-        };
-        redrawJump (jump, element = this.getJumpElement(jump)) {
-            if (element == null) return;
-
-            if (element.innerHTML == "") {
-                element.className = "jumpBlock";
-                element.innerHTML = `
-                    <div class='timer'></div><div class='info'>${jump.initiator.name}</div>
-                    <button class="joinBtn">Присоединиться</button><div class="membersList"></div>`;
-                element.querySelector(".joinBtn").onclick = () => {
-                    jump.join();
-                };
-            }
-            element.querySelector(".timer").innerHTML = jump.time_left_str;
-            this.redrawJumpTimer(jump, element);
-            this.redrawJumpMembers(jump, element);
-        };
-        redrawJumpTimer (jump, element = this.getJumpElement(jump)) {
-            if (element == null) return;
-            element.querySelector(".timer").innerHTML = jump.time_left_str;
-        };
-        redrawJumpMembers (jump, element = this.getJumpElement(jump)) {
-            if (element == null) return;
-            element = element.querySelector(".membersList");
-            element.innerHTML = "";
-            for (let user of jump.members) {
-                if (!user.online) continue;
-                element.innerHTML += `<div class='userInfo'>${user.name}</div>`;
-            }
-        };
-        redrawUserList (users) {
-            let list = this.element.querySelector("#userList");
-
-            let unchanged = [];
-            for (let i = this.user_elements.length - 1; i >= 0; i--) {
-                let index = users.indexOf(this.user_elements[i]["user"]);
-                if (!~index) {
-                    list.removeChild(this.user_elements[i]["element"]);
-                    this.user_elements.splice(i, 1);
-                } else {
-                    unchanged.push(users[index]);
-                }
-            }
-
-            for (let user of users) {
-                if (~unchanged.indexOf(user)) continue;
-                let element = document.createElement("div");
-                this.user_elements.push({user: user, element: element});
-                this.redrawUser(user, element);
-                list.appendChild(element);
-            }
-        };
-        redrawUser (user, element = this.getUserElement(user)) {
-            if (element == null) return;
-
-            if (element.innerHTML == "") {
-                element.className = "userInfo";
-                element.innerHTML = `<div class='stateMarker'></div><span class='name'></span>`;
-            }
-            element.querySelector(".name").innerHTML = user.name;
-            this.redrawUserState(user, element);
-        };
-        redrawUserState (user, element = this.getUserElement(user)) {
-            if (element == null) return;
-
-            let marker = element.querySelector(".stateMarker");
-        };
-    }
-
-    class ViewJump extends View {
-        constructor (jump) {
-            super();
-            this.jump = jump;
-        }
-        draw () {
-            this.element = document.createElement("div");
-            this.element.innerHTML = `
-                <div class='timer'></div>
-                <div class='info'></div>
-                <div class="membersList"></div>
-                <div class="jumpChat">
-                    <div class="chatMessages">Тут типа чат</div>
-                    <div class="chatForm">
-                        <input type="text">
-                        <input type="button" value="Send">
-                    </div>
-                </div>
-            `;
-
-            let chatElement = this.element.querySelector(".jumpChat");
-            let chatInput = chatElement.querySelector("input[type=text]");
-            let chatBtn = chatElement.querySelector("input[type=button]");
-
-            chatBtn.onclick = () => {
-                this.jump.chatSend(chatInput.value);
-                chatInput.value = "";
-                chatInput.focus();
-            };
-
-            chatInput.onkeydown = event => {
-                if (event.keyCode != 13) return;
-                this.jump.chatSend(chatInput.value);
-                chatInput.value = "";
-            };
-
-            return this.element;
-        }
-        redrawJump (jump, element = this.getJumpElement(jump)) {
-            if (jump != this.jump) return;
-            this.redrawJumpTimer(jump, element);
-            this.redrawJumpMembers(jump, element);
-        };
-        redrawJumpTimer (jump) {
-            if (jump != this.jump) return;
-            this.element.querySelector(".timer").innerHTML = jump.time_left_str;
-        };
-        redrawJumpMembers (jump) {
-            if (jump != this.jump) return;
-            let element = this.element.querySelector(".membersList");
-            element.innerHTML = "";
-            for (let user of jump.members) {
-                if (!user.online) continue;
-                element.innerHTML += `<div class='userInfo'>${user.name}</div>`;
-            }
-        };
-        redrawJumpChat (jump) {
-            if (jump != this.jump) return;
-            let chatMessages = this.element.querySelector(".chatMessages");
-            chatMessages.innerHTML = "";
-            for (let msg of jump.chat){
-                chatMessages.innerHTML += `<div class='chatItem fr_msg_l'>${msg['name']}: ${msg['text']}</div>`;
-            }
-        }
     }
 
     class User {
@@ -630,26 +462,333 @@
         chatSend (text) {
             wson.send("chat", {user: gvd.me.name, message: text});
         };
-
-        reset () {};
     }
 
+    ///////////////////////////////////////////
+
+    var tabs = {
+        init () {
+            let container = document.getElementsByClassName("msgDockWrapper")[0];
+            if (typeof container == "undefined") return false;
+
+            this.tab = [];
+            this.tab[0] = document.createElement("div");
+            this.tab[0].className = "msgDock gvdBig";
+            this.tab[0].style.display = "none";
+            container.appendChild(this.tab[0]);
+            this.tab[1] = document.createElement("div");
+            this.tab[1].className = "msgDock gvdSmall";
+            this.tab[1].style.display = "none";
+            container.appendChild(this.tab[1]);
+        },
+        bindView (id, view, text = "GVD") {
+            if (!this.tab[id]) throw("There is no tab with such id^ "+id);
+            let btn = this.tab[id];
+
+            if (view == null)
+                btn.style.display = "none";
+            else{
+                btn.innerHTML = text;
+                btn.style.display = "block";
+                btn.onclick = () => {
+                    let vis = views.isViewVisible(view);
+                    if (vis === true) views.showOnly(null);
+                    if (vis === false) views.showOnly(view);
+                };
+            }
+        }
+    };
+
+    var views = {
+        CONTAINER_ID: "gvdContainer",
+        WRAP_ID: "gvd_wrap",
+        views: [],
+        addView (view) {
+            let element = view.draw();
+            this.views.push({
+                view: view,
+                element: element
+            });
+            document.getElementById(CONTAINER_ID).appendChild(element);
+        },
+        removeView (view) {
+            let index = this.indexOfView(view);
+            if (~index){
+                let el = this.views[index].element;
+                el.parentNode.removeChild(el);
+                this.views.splice(index, 1);
+            }
+        },
+        showOnly (view) {
+            for (let item of this.views){
+                item.element.style.display = "none";
+            }
+            let index = this.indexOfView(view);
+            if (~index){
+                this.views[index].element.style.display = "block";
+                document.getElementById(WRAP_ID).style.display = "block";
+            }else{
+                document.getElementById(WRAP_ID).style.display = "none";
+            }
+        },
+        isViewVisible (view) {
+            let index = this.indexOfView(view);
+            if (~index)
+                return this.views[index].element.style.display != "none";
+            else
+                return null;
+
+        },
+        redraw (element) {
+            Array.prototype.shift.call(arguments);
+            for (let item of this.views){
+                let view = item.view;
+                let func = view["redraw" + element];
+                if (!func){
+                    throw("Active view has no handler with name 'redraw" + element + "'");
+                }
+                view["redraw" + element].apply(view, arguments);
+            }
+        },
+        indexOfView (view) {
+            for (let i = 0; i < this.views.length; i++){
+                if (this.views[i].view == view){
+                    return i;
+                }
+            }
+            return -1;
+        }
+    };
+
+    class View{
+        constructor () {
+            this.jump_elements = [];
+            this.user_elements = [];
+        }
+
+        draw () {}
+
+        getJumpElement (jump) {
+            for (let pair of this.jump_elements){
+                if (pair["jump"] == jump){
+                    return pair["element"];
+                }
+            }
+            return null;
+        }
+        getUserElement (user) {
+            for (let pair of this.user_elements){
+                if (pair["user"] == user){
+                    return pair["element"];
+                }
+            }
+            return null;
+        }
+        redrawUserList () {};
+        redrawUser (user) {};
+        redrawUserState (user) {};
+        redrawJumpList () {};
+        redrawJump (jump) {};
+        redrawJumpTimer (jump) {};
+        redrawJumpMembers (jump) {};
+        redrawJumpChat (jump) {};
+    }
+    class ViewNormal extends View {
+        constructor (gvd) {
+            super();
+            this.gvd = gvd;
+        }
+        draw () {
+            this.element = document.createElement("div");
+            this.element.innerHTML = TEMPLATES["list"];
+            this.element.querySelector("#jumpButton").onclick = () => {
+                this.gvd.jump();
+            };
+            this.element.querySelector("#exitButton").onclick = () => {
+                this.gvd.logout();
+            };
+            //this.redrawUserList();
+            //this.redrawJumpList();
+            return this.element;
+        }
+        redrawJumpList (jumps) {
+            let list = this.element.querySelector("#jumpList");
+
+            let unchanged = [];
+            for (let i = this.jump_elements.length - 1; i >= 0; i--) {
+                let index = jumps.indexOf(this.jump_elements[i]["jump"]);
+                if (!~index) {
+                    list.removeChild(this.jump_elements[i]["element"]);
+                    this.jump_elements.splice(i, 1);
+                } else {
+                    unchanged.push(jumps[index]);
+                }
+            }
+
+            for (let jump of jumps) {
+                if (~unchanged.indexOf(jump)) continue;
+                let element = document.createElement("div");
+                this.jump_elements.push({jump: jump, element: element});
+                this.redrawJump(jump, element);
+                list.appendChild(element);
+            }
+        };
+        redrawJump (jump, element = this.getJumpElement(jump)) {
+            if (element == null) return;
+
+            if (element.innerHTML == "") {
+                element.className = "jumpBlock";
+                element.innerHTML = TEMPLATES["list_jump"];
+                element.querySelector(".info").innerHTML = jump.initiator.name;
+                element.querySelector(".joinBtn").onclick = () => {
+                    jump.join();
+                };
+            }
+            element.querySelector(".timer").innerHTML = jump.time_left_str;
+            this.redrawJumpTimer(jump, element);
+            this.redrawJumpMembers(jump, element);
+        };
+        redrawJumpTimer (jump, element = this.getJumpElement(jump)) {
+            if (element == null) return;
+            element.querySelector(".timer").innerHTML = jump.time_left_str;
+        };
+        redrawJumpMembers (jump, element = this.getJumpElement(jump)) {
+            if (element == null) return;
+            element = element.querySelector(".membersList");
+            element.innerHTML = "";
+            for (let user of jump.members) {
+                if (!user.online) continue;
+                element.innerHTML += `<div class='userInfo'>${user.name}</div>`;
+            }
+        };
+        redrawUserList (users) {
+            let list = this.element.querySelector("#userList");
+
+            let unchanged = [];
+            for (let i = this.user_elements.length - 1; i >= 0; i--) {
+                let index = users.indexOf(this.user_elements[i]["user"]);
+                if (!~index) {
+                    list.removeChild(this.user_elements[i]["element"]);
+                    this.user_elements.splice(i, 1);
+                } else {
+                    unchanged.push(users[index]);
+                }
+            }
+
+            for (let user of users) {
+                if (~unchanged.indexOf(user)) continue;
+                let element = document.createElement("div");
+                this.user_elements.push({user: user, element: element});
+                this.redrawUser(user, element);
+                list.appendChild(element);
+            }
+        };
+        redrawUser (user, element = this.getUserElement(user)) {
+            if (element == null) return;
+
+            if (element.innerHTML == "") {
+                element.className = "userInfo";
+                element.innerHTML = `<div class='stateMarker'></div><span class='name'></span>`;
+            }
+            element.querySelector(".name").innerHTML = user.name;
+            this.redrawUserState(user, element);
+        };
+        redrawUserState (user, element = this.getUserElement(user)) {
+            if (element == null) return;
+
+            let marker = element.querySelector(".stateMarker");
+        };
+    }
+    class ViewJump extends View {
+        constructor (jump) {
+            super();
+            this.jump = jump;
+        }
+        draw () {
+            this.element = document.createElement("div");
+            this.element.innerHTML = TEMPLATES["jump"];
+
+            let chatElement = this.element.querySelector(".jumpChat");
+            let chatInput = chatElement.querySelector("input[type=text]");
+            let chatBtn = chatElement.querySelector("input[type=button]");
+
+            chatBtn.onclick = () => {
+                this.jump.chatSend(chatInput.value);
+                chatInput.value = "";
+                chatInput.focus();
+            };
+
+            chatInput.onkeydown = event => {
+                if (event.keyCode != 13) return;
+                this.jump.chatSend(chatInput.value);
+                chatInput.value = "";
+            };
+
+            return this.element;
+        }
+        redrawJump (jump, element = this.getJumpElement(jump)) {
+            if (jump != this.jump) return;
+            this.redrawJumpTimer(jump, element);
+            this.redrawJumpMembers(jump, element);
+        };
+        redrawJumpTimer (jump) {
+            if (jump != this.jump) return;
+            this.element.querySelector(".timer").innerHTML = jump.time_left_str;
+        };
+        redrawJumpMembers (jump) {
+            if (jump != this.jump) return;
+            let element = this.element.querySelector(".membersList");
+            element.innerHTML = "";
+            for (let user of jump.members) {
+                if (!user.online) continue;
+                element.innerHTML += `<div class='userInfo'>${user.name}</div>`;
+            }
+        };
+        redrawJumpChat (jump) {
+            if (jump != this.jump) return;
+            let chatMessages = this.element.querySelector(".chatMessages");
+            chatMessages.innerHTML = "";
+            for (let msg of jump.chat){
+                chatMessages.innerHTML += `<div class='chatItem fr_msg_l'>${msg['name']}: ${msg['text']}</div>`;
+            }
+        }
+    }
+    class ViewAuth extends View {
+        constructor (auth_mgr) {
+            super();
+            this.auth_mgr = auth_mgr;
+        }
+        draw () {
+            this.element = document.createElement("div");
+            this.element.innerHTML = TEMPLATES["auth"];
+
+            let loginForm = this.element.querySelector("#loginForm");
+            let passInput = loginForm.querySelector("#passInput");
+            let nameInput = loginForm.querySelector("#nameInput");
+
+            loginForm.onkeydown = (e => {
+                if(e.keyCode==13)
+                    this.element.querySelector("#confirmButton").click();
+            });
+
+            nameInput.value = gvd.getGodName();
+            if (nameInput.value == "") nameInput.focus();
+            else passInput.focus();
+
+            this.element.querySelector("#confirmButton").onclick = () => {
+                let name = nameInput.value;
+                let pass = passInput.value;
+                this.auth_mgr.sendCredentials(name, pass);
+            };
+            this.element.querySelector("#signupButton").onclick = () => this.auth_mgr.signup();
+
+            return this.element;
+        }
+    }
+
+    ///////////////////////////////////////////
 
     function LoginManager(){
-
-        var el = this.element = document.getElementById("loginContainer");
-
-        var loginForm = el.querySelector("#loginForm");
-        var passInput = loginForm.querySelector("#passInput");
-        var nameInput = loginForm.querySelector("#nameInput");
-
-        loginForm.onkeydown = (e => {
-            if(e.keyCode==13)
-                this.element.querySelector("#confirmButton").click();
-        });
-        nameInput.value = gvd.getGodName();
-        if (nameInput.value == "") nameInput.focus();
-        else passInput.focus();
 
         var loginHandler = function(){};
         var logoutHandler = function(){};
@@ -683,31 +822,31 @@
             this.activate();
         };
         
-        this.send = function(){
+        this.sendCredentials = function(name, pass){
             Promise.resolve()
                 .then(() => wson.fetch("salt"))
-                .then( d => Sha1.hash(Sha1.hash(passInput.value) + d["salt"]))
-                .then( hash => wson.fetch("auth", {login: nameInput.value, password: hash}))
+                .then( d => Sha1.hash(Sha1.hash(pass) + d["salt"]))
+                .then( hash => wson.fetch("auth", {login: name, password: hash}))
                 .then( d => {
                     if (d.status != "success") {
                         alert("Неверный логин или пароль");
                         return;
                     }
-
-                    loginForm.style.display = "none";
                     this.auth(d["sid"]);
                 });
         };
-        
-        this.showLoginForm = function(){
-            loginForm.style.display = "block";
 
-            this.element.querySelector("#confirmButton").onclick = this.send.bind(this);
-            this.element.querySelector("#signupButton").onclick = this.signup.bind(this);
+        this.showLoginForm = function(){
+            this.view = new ViewAuth(this);
+            views.addView(this.view);
+            views.showOnly(this.view);
+            tabs.bindView(0, this.view);
         };
 
         this.signup = function(){
+            let loginContainer = document.getElementById("loginContainer");
             let signupContainer = document.getElementById("signupContainer");
+
             let proceedBtn = signupContainer.querySelector("#signupProceed");
 
             let signupForm1 = signupContainer.querySelector("#signupForm1");
@@ -741,7 +880,7 @@
 
             Promise.resolve()
                 .then(() => {
-                    loginForm.style.display = "none";
+                    loginContainer.style.display = "none";
                     signupContainer.style.display = "block";
                     signupForm1.style.display = "block";
                     nameInput.value = gvd.getGodName();
@@ -767,7 +906,7 @@
                 .then(() => {
                     signupForm3.style.display = "none";
                     signupContainer.style.display = "none";
-                    this.showLoginForm();
+                    loginContainer.style.display = "block";
                 })
                 .catch(() => {
                     this.signup();
@@ -776,8 +915,6 @@
         };
 
         this.activate = function() {
-            this.element.style.display = "block";
-            
             var sid = getCookie("sid");
 
             if (sid === undefined) {
@@ -790,7 +927,7 @@
                         if (d["status"] == "accepted") {
                             console.log("SID accepted!");
                             this.auth(sid);
-                        } else {
+                        }else{
                             console.log("Wrong sid");
                             this.showLoginForm();
                         }
@@ -799,7 +936,7 @@
         };
         
         this.deactivate = function(){
-            this.element.style.display = "none";
+            views.removeView(this.view);
         };
 
         return this;
@@ -824,6 +961,8 @@
             gvd.deactivate();
         });
 
+        tabs.init();
+
         wson.onopen(function () {
             console.log('Connected');
             login.activate();
@@ -837,6 +976,7 @@
             }
             console.log('Code: ' + event.code + '; reason: ' + event.reason);
         });
+
     };
 
 })();
